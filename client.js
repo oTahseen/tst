@@ -6,6 +6,7 @@ require("./lib/system/functions"), require("./lib/system/scraper"), require("./l
 const cron = require("node-cron")
 const fs = require("fs")
 const colors = require("@colors/colors")
+const logger = require("./logger") // Declare logger variable
 // REMOVED: const { NodeCache } = require("@cacheable/node-cache")
 // REMOVED: const cache = new NodeCache({ stdTTL: env.cooldown })
 
@@ -127,7 +128,7 @@ const connect = async () => {
           global.telegramBridge = null // Clear global reference on error
         }
       } else {
-        console.warn(colors.yellow("⚠️ Telegram bridge disabled - missing environment variables"))
+        logger.warn(colors.yellow("⚠️ Telegram bridge disabled - missing environment variables"))
         global.telegramBridge = null
       }
 
@@ -184,7 +185,7 @@ const connect = async () => {
             }
           }
           if (cleanedCount > 0) {
-            console.log(colors.cyan(`🧹 Cleaned up ${cleanedCount} old processed message IDs from database.`))
+            logger.info(colors.cyan(`🧹 Cleaned up ${cleanedCount} old processed message IDs from database.`))
             await database.save(global.db) // Save after cleanup
           }
         },
@@ -204,7 +205,7 @@ const connect = async () => {
           }
         }
         if (cleanedCount > 0) {
-          console.log(colors.cyan(`🧹 Cleaned up ${cleanedCount} old anti-delete spam entries from database.`))
+          logger.info(colors.cyan(`🧹 Cleaned up ${cleanedCount} old anti-delete spam entries from database.`))
           await database.save(global.db) // Save after cleanup
         }
       }, env.cooldown * 1000) // Run cleanup every `cooldown` seconds
