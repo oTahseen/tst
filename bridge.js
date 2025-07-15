@@ -881,7 +881,7 @@ class TelegramBridge {
           displayName: `${contact.first_name} ${contact.last_name || ""}`,
           contacts: [
             {
-              displayName: `${contact.first_name || ""}`,
+              displayName: `${contact.first_name} ${contact.last_name || ""}`, // Corrected line
               vcard: vcard,
             },
           ],
@@ -1821,6 +1821,7 @@ class TelegramBridge {
       }
     } catch (error) {
       logger.error("Failed to handle status reply:", error)
+      const originalStatusKey = this.statusMessageMapping.get(msg.reply_to_message.message_id)
       const statusJid = originalStatusKey?.participant
       const phone = statusJid?.split("@")[0]
       const contactName = phone ? this.contactMappings.get(phone) || `+${phone}` : null
