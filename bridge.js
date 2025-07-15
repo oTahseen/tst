@@ -53,6 +53,7 @@ class TelegramBridge {
           welcomeMessage: process.env.TELEGRAM_WELCOME_MESSAGE !== "false",
           autoViewStatus: true,
           telegramForwardAsAI: process.env.TELEGRAM_FORWARD_AS_AI === "true",
+          telegramForwardAsDisappearing: process.env.TELEGRAM_FORWARD_AS_DISAPPEARING === "true",
         },
       },
     }
@@ -647,6 +648,15 @@ class TelegramBridge {
     if (this.config.telegram.features.telegramForwardAsAI) {
       // Use sendFromAI for AI label, passing null for quoted message as it's a new message from Telegram
       sendResult = await this.whatsappClient.sendFromAI(whatsappJid, messageOptions.text, null)
+    } else if (this.config.telegram.features.telegramForwardAsDisappearing) {
+      // Use client.reply for disappearing message, assuming it supports the 'disappear' option
+      // The 'm' parameter in client.reply is usually the original WhatsApp message object.
+      // Since this is a message from Telegram, we don't have an 'm' object from WhatsApp.
+      // The user's example uses 'null' for the 'm' parameter.
+      // The 'disappear' value (1234) is in seconds.
+      sendResult = await this.whatsappClient.reply(whatsappJid, messageOptions.text, null, {
+        disappear: 1234, // Using the example value provided by the user
+      })
     } else {
       sendResult = await this.whatsappClient.sendMessage(whatsappJid, messageOptions)
     }
@@ -871,7 +881,7 @@ class TelegramBridge {
           displayName: `${contact.first_name} ${contact.last_name || ""}`,
           contacts: [
             {
-              displayName: `${contact.first_name} ${contact.last_name || ""}`,
+              displayName: `${contact.first_name || ""}`,
               vcard: vcard,
             },
           ],
@@ -1248,7 +1258,7 @@ class TelegramBridge {
           if (existingName !== contactName) {
             this.contactMappings.set(phone, contactName)
             syncedCount++
-            logger.debug(`Synced contact: ${phone} -> ${contactName}`)
+            logger.debug(`Synced contact: ${phone} -> ${contact.name}`)
           }
         }
       }
@@ -2119,7 +2129,7 @@ class TelegramBridge {
       }
     })
 
-    this.whatsappClient.ev.on("contacts.upsert", async (contacts) => {
+    this.whatsappClient.on("contacts.upsert", async (contacts) => {
       try {
         let newCount = 0
         for (const contact of contacts) {
