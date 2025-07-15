@@ -370,8 +370,8 @@ class TelegramBridge {
       telegramMessageId = await this.sendSimpleMessage(topicId, messageText, sender)
     }
 
-    // Set reaction if a message was successfully sent to Telegram
-    if (telegramMessageId) {
+    // Set reaction if a message was successfully sent to Telegram AND it's an incoming message
+    if (telegramMessageId && !isFromMe) {
       await this.setReaction(this.config.telegram.chatId, telegramMessageId, "👍")
     }
 
@@ -662,7 +662,6 @@ class TelegramBridge {
 
     if (sendResult?.key?.id) {
       await this.setReaction(msg.chat.id, msg.message_id, "👍")
-
       setTimeout(async () => {
         await this.queueMessageForReadReceipt(whatsappJid, sendResult.key)
       }, 1000)
@@ -1385,7 +1384,7 @@ END:VCARD`
         const vcard = contactMsg.vcard
 
         if (!vcard) {
-          logger.warn("No vCard found in WhatsApp contact message.")
+          logger.warn("No vCard found in WhatsApp contact message. Sending as text.")
           const sentText = await this.telegramBot.sendMessage(chatId, "⚠️ Received contact without vCard.", {
             message_thread_id: finalTopicId,
           })
@@ -1394,11 +1393,11 @@ END:VCARD`
 
         // Parse vCard to extract details
         const nameMatch = vcard.match(/FN:(.+)/i)
-        const telMatch = vcard.match(/TEL;type=CELL:(.+)/i) || vcard.match(/TEL:(.+)/i)
+        const telMatches = vcard.match(/TEL(?:;[^:]+)*:([^\r\n]+)/gi) // Get all TEL lines
 
         let firstName = contactMsg.displayName || "Unknown"
         let lastName = ""
-        const phoneNumber = telMatch ? telMatch[1].trim().replace(/\D/g, "") : "" // Clean phone number
+        let phoneNumber = ""
 
         if (nameMatch) {
           const fullName = nameMatch[1].trim()
@@ -1406,6 +1405,16 @@ END:VCARD`
           firstName = nameParts[0]
           if (nameParts.length > 1) {
             lastName = nameParts.slice(1).join(" ")
+          }
+        }
+
+        if (telMatches && telMatches.length > 0) {
+          for (const match of telMatches) {
+            const num = match.split(":")[1].trim().replace(/\D/g, "") // Extract and clean number
+            if (num) {
+              phoneNumber = num
+              break // Take the first valid number found
+            }
           }
         }
 
@@ -1420,6 +1429,18 @@ END:VCARD`
         }
         if (phoneNumber) {
           caption += `\nPhone: ${phoneNumber}`
+        }
+
+        if (!phoneNumber) {
+          logger.warn("❌ Could not extract a valid phone number from vCard. Sending as text.")
+          const sentText = await this.telegramBot.sendMessage(
+            chatId,
+            caption + "\n\n_Could not extract phone number._",
+            {
+              message_thread_id: finalTopicId,
+            },
+          )
+          return sentText.message_id
         }
 
         // Send as Telegram contact
@@ -1608,9 +1629,7 @@ END:VCARD`
         telegramMessageId = await this.sendSimpleMessage(topicId, messageText, sender)
       }
 
-      if (telegramMessageId) {
-        await this.setReaction(this.config.telegram.chatId, telegramMessageId, "👍")
-      }
+      // No reaction for outgoing messages
     } catch (error) {
       logger.error("❌ Failed to sync outgoing message:", error)
     }
@@ -2265,6 +2284,29 @@ END:VCARD`
     }
 
     logger.info("✅ Telegram bridge shutdown complete.")
+  }
+
+  /**
+   * Sends presence update to WhatsApp
+   * @param {string} jid
+   * @param {string} presenceType
+   */
+  async sendPresence(jid, presenceType = "available") {
+    try {
+      if (!this.whatsappClient || !this.config.telegram.features.presenceUpdates) return
+
+      const now = Date.now()
+      const lastUpdate = this.lastPresenceUpdate.get(jid) || 0
+
+      if (now - lastUpdate < 1000) return
+
+      this.lastPresenceUpdate.set(jid, now)
+
+      await this.whatsappClient.sendPresenceUpdate(presenceType, jid)
+      logger.debug(`👁️ Sent presence update: ${presenceType} to ${jid}`)
+    } catch (error) {
+      logger.debug("Failed to send presence:", error)
+    }
   }
 }
 
