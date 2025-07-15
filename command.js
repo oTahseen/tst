@@ -61,7 +61,7 @@ class TelegramCommands {
           await this.handleMenu(msg.chat.id)
       }
     } catch (error) {
-      logger.error(`❌ Error handling command ${command}:`, error)
+      logger.error(`Error handling command ${command}:`, error)
       await this.bridge.telegramBot.sendMessage(msg.chat.id, `❌ Command error: ${error.message}`, {
         parse_mode: "Markdown",
       })
@@ -115,7 +115,7 @@ class TelegramCommands {
       const response = result?.key?.id ? `✅ Message sent to ${number}` : `⚠️ Message sent, but no confirmation`
       await this.bridge.telegramBot.sendMessage(chatId, response, { parse_mode: "Markdown" })
     } catch (error) {
-      logger.error(`❌ Error sending message to ${number}:`, error)
+      logger.error(`Error sending message to ${number}:`, error)
       await this.bridge.telegramBot.sendMessage(chatId, `❌ Error: ${error.message}`, { parse_mode: "Markdown" })
     }
   }
@@ -252,9 +252,9 @@ class TelegramCommands {
         { command: "filters", description: "Show blocked words" },
         { command: "clearfilters", description: "Clear all filters" },
       ])
-      logger.info("✅ Telegram bot commands registered")
+      logger.info("Telegram bot commands registered")
     } catch (error) {
-      logger.error("❌ Failed to register Telegram bot commands:", error)
+      logger.error("Failed to register Telegram bot commands:", error)
     }
   }
 }
