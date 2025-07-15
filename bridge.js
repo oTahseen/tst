@@ -688,13 +688,7 @@ class TelegramBridge {
 
   async handleTelegramVideo(msg, whatsappJid) {
     try {
-      const fileId = msg.video?.file_id || msg.animation?.file_id
-      if (!fileId) {
-        logger.error("❌ No file_id found for video/animation")
-        await this.setReaction(msg.chat.id, msg.message_id, "❌")
-        return
-      }
-      const buffer = await this.downloadTelegramMedia(fileId)
+      const buffer = await this.downloadTelegramMedia(msg.video.file_id)
 
       if (buffer) {
         const messageOptions = {
@@ -859,76 +853,35 @@ class TelegramBridge {
   }
 
   async handleTelegramContact(msg, whatsappJid) {
-    const sendContact = async (finalTopicId) => {
-      try {
-        const chatId = this.config.telegram.chatId
-        const contactMsg = msg.contact
+    try {
+      const contact = msg.contact
+      const vcard = `BEGIN:VCARD
+VERSION:3.0
+FN:${contact.first_name} ${contact.last_name || ""}
+TEL:${contact.phone_number}
+END:VCARD`
 
-        const participant = msg.from.id
-        const phone = msg.from.id
-        const senderName = msg.from.first_name || `+${phone}`
-        const isGroup = false
-
-        // Extract contact details
-        const displayName = contactMsg.first_name || "Unknown Contact"
-        let phoneNumber = ""
-
-        if (contactMsg.phone_number) {
-          phoneNumber = contactMsg.phone_number.trim().replace(/[^\d+]/g, "")
-        }
-
-        // Send as Telegram contact if we have a phone number
-        if (phoneNumber) {
-          try {
-            await this.telegramBot.sendContact(chatId, phoneNumber, displayName, {
-              message_thread_id: finalTopicId,
-            })
-
-            // Add context message for groups
-            if (isGroup && participant !== msg.from.id) {
-              await this.telegramBot.sendMessage(chatId, `👤 ${senderName} shared a contact`, {
-                message_thread_id: finalTopicId,
-              })
-            }
-
-            return
-          } catch (contactError) {
-            logger.debug("Failed to send as Telegram contact, falling back to text:", contactError.message)
-          }
-        }
-
-        // Fallback to text message
-        let caption = `👤 Contact: ${displayName}`
-        if (isGroup && participant !== msg.from.id) {
-          caption = `👤 ${senderName} shared a contact:\n${displayName}`
-        }
-
-        if (phoneNumber) {
-          caption += `\n📱 ${phoneNumber}`
-        }
-
-        await this.telegramBot.sendMessage(chatId, caption, {
-          message_thread_id: finalTopicId,
-        })
-      } catch (error) {
-        const desc = error.response?.data?.description || error.message
-        if (desc.includes("message thread not found")) {
-          logger.warn(`🗑️ Contact topic deleted. Recreating...`)
-          const sender = msg.chat.id
-          this.chatMappings.delete(sender)
-          this.profilePicCache.delete(sender)
-          await this.saveMappingsToDb()
-          const newTopicId = await this.getOrCreateTopic(sender, msg)
-          if (newTopicId) {
-            await sendContact(newTopicId)
-          }
-        } else {
-          logger.error("❌ Failed to handle contact:", desc)
-        }
+      const messageOptions = {
+        contacts: {
+          displayName: `${contact.first_name} ${contact.last_name || ""}`,
+          contacts: [
+            {
+              displayName: `${contact.first_name} ${contact.last_name || ""}`,
+              vcard: vcard,
+            },
+          ],
+        },
       }
+
+      const sendResult = await this.whatsappClient.sendMessage(whatsappJid, messageOptions)
+
+      if (sendResult?.key?.id) {
+        await this.setReaction(msg.chat.id, msg.message_id, "👍")
+      }
+    } catch (error) {
+      logger.error("❌ Failed to forward contact to WhatsApp:", error.message, error.stack)
+      await this.setReaction(msg.chat.id, msg.message_id, "❌")
     }
-    const topicId = msg.message_thread_id
-    await sendContact(topicId)
   }
 
   async downloadTelegramMedia(fileId) {
@@ -1229,90 +1182,6 @@ class TelegramBridge {
 
   async setReaction(chatId, messageId, emoji) {
     try {
-      // Validate emoji
-      const validEmojis = [
-        "👍",
-        "👎",
-        "❤️",
-        "🔥",
-        "🥰",
-        "👏",
-        "😁",
-        "🤔",
-        "🤯",
-        "😱",
-        "🤬",
-        "😢",
-        "🎉",
-        "🤩",
-        "🤮",
-        "💩",
-        "🙏",
-        "👌",
-        "🕊",
-        "🤡",
-        "🥱",
-        "🥴",
-        "😍",
-        "🐳",
-        "❤️‍🔥",
-        "🌚",
-        "🌭",
-        "💯",
-        "🤣",
-        "⚡️",
-        "🍌",
-        "🏆",
-        "💔",
-        "🤨",
-        "😐",
-        "🍓",
-        "🍾",
-        "💋",
-        "🖕",
-        "😈",
-        "😴",
-        "😭",
-        "🤓",
-        "👻",
-        "👨‍💻",
-        "👀",
-        "🎃",
-        "🙈",
-        "😇",
-        "😨",
-        "🤝",
-        "✍️",
-        "🤗",
-        "🫡",
-        "🎅",
-        "🎄",
-        "☃️",
-        "💅",
-        "🤪",
-        "🗿",
-        "🆒",
-        "💘",
-        "🙉",
-        "🦄",
-        "😘",
-        "💊",
-        "🙊",
-        "😎",
-        "👾",
-        "🤷‍♂️",
-        "🤷",
-        "🤷‍♀️",
-        "😡",
-        "🚫",
-        "❌",
-      ]
-
-      if (!validEmojis.includes(emoji)) {
-        logger.debug(`Invalid emoji for reaction: ${emoji}`)
-        return
-      }
-
       const token = this.config.telegram.botToken
       await axios.post(`https://api.telegram.org/bot${token}/setMessageReaction`, {
         chat_id: chatId,
@@ -1320,10 +1189,7 @@ class TelegramBridge {
         reaction: [{ type: "emoji", emoji }],
       })
     } catch (err) {
-      // Only log if it's not a common reaction error
-      if (!err?.response?.data?.description?.includes("REACTION_INVALID")) {
-        logger.warn("❌ Failed to set reaction:", err?.response?.data?.description || err.message)
-      }
+      logger.warn("❌ Failed to set reaction:", err?.response?.data?.description || err.message)
     }
   }
 
@@ -1481,6 +1347,57 @@ class TelegramBridge {
       }
     }
     await sendLocation(topicId)
+  }
+
+  async handleWhatsAppContact(whatsappMsg, topicId) {
+    const sendContact = async (finalTopicId) => {
+      try {
+        const chatId = this.config.telegram.chatId
+        const contactMsg = whatsappMsg.message.contactMessage
+
+        const participant = whatsappMsg.key.participant || whatsappMsg.key.remoteJid
+        const phone = participant.split("@")[0]
+        const senderName = this.contactMappings.get(phone) || `+${phone}`
+        const isGroup = whatsappMsg.key.remoteJid.endsWith("@g.us")
+
+        let caption = `👤 Contact: ${contactMsg.displayName}`
+        if (isGroup && participant !== whatsappMsg.key.remoteJid) {
+          caption = `👤 ${senderName} shared a contact:\n${contactMsg.displayName}`
+        }
+
+        let phoneNumber = ""
+        if (contactMsg.vcard) {
+          const phoneMatch = contactMsg.vcard.match(/TEL[^:]*:([^\n\r]+)/i)
+          if (phoneMatch) {
+            phoneNumber = phoneMatch[1].trim()
+          }
+        }
+
+        if (phoneNumber) {
+          caption += `\n📱 ${phoneNumber}`
+        }
+
+        await this.telegramBot.sendMessage(chatId, caption, {
+          message_thread_id: finalTopicId,
+        })
+      } catch (error) {
+        const desc = error.response?.data?.description || error.message
+        if (desc.includes("message thread not found")) {
+          logger.warn(`🗑️ Contact topic deleted. Recreating...`)
+          const sender = whatsappMsg.key.remoteJid
+          this.chatMappings.delete(sender)
+          this.profilePicCache.delete(sender)
+          await this.saveMappingsToDb()
+          const newTopicId = await this.getOrCreateTopic(sender, whatsappMsg)
+          if (newTopicId) {
+            await sendContact(newTopicId)
+          }
+        } else {
+          logger.error("❌ Failed to handle contact:", desc)
+        }
+      }
+    }
+    await sendContact(topicId)
   }
 
   async handleStatusMessage(whatsappMsg, text) {
