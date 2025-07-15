@@ -80,6 +80,7 @@ class TelegramBridge {
       await this.loadMappingsFromDb()
       await this.loadFiltersFromDb()
 
+      // Wait for WhatsApp to be ready before syncing
       if (this.whatsappClient?.user) {
         await this.syncContacts()
         await this.updateTopicNames()
@@ -1215,6 +1216,8 @@ END:VCARD`
       const contacts = this.whatsappClient.store?.contacts || {}
       const contactEntries = Object.entries(contacts)
 
+      logger.debug(`🔍 Found ${contactEntries.length} contacts in WhatsApp store`)
+
       let syncedCount = 0
 
       for (const [jid, contact] of contactEntries) {
@@ -1223,6 +1226,7 @@ END:VCARD`
         const phone = jid.split("@")[0]
         let contactName = null
 
+        // Extract name from contact - prioritize saved contact name
         if (contact.name && contact.name !== phone && !contact.name.startsWith("+") && contact.name.length > 2) {
           contactName = contact.name
         } else if (
@@ -1241,12 +1245,17 @@ END:VCARD`
           if (existingName !== contactName) {
             this.contactMappings.set(phone, contactName)
             syncedCount++
+            logger.debug(`📞 Synced contact: ${phone} -> ${contactName}`)
           }
         }
       }
 
       await this.saveMappingsToDb()
       logger.info(`✅ Synced ${syncedCount} new/updated contacts (Total: ${this.contactMappings.size})`)
+
+      if (syncedCount > 0) {
+        await this.updateTopicNames()
+      }
     } catch (error) {
       logger.error("❌ Failed to sync contacts:", error)
     }
@@ -2058,42 +2067,49 @@ END:VCARD`
       return
     }
 
+    // Enhanced contact sync and topic name update handlers
     this.whatsappClient.ev.on("contacts.update", async (contacts) => {
       try {
         let updatedCount = 0
         for (const contact of contacts) {
-          if (contact.id) {
+          if (contact.id && contact.name) {
             const phone = contact.id.split("@")[0]
             const oldName = this.contactMappings.get(phone)
 
+            // Only update if it's a real contact name (not handle name)
             if (
-              contact.name &&
               contact.name !== phone &&
               !contact.name.startsWith("+") &&
               contact.name.length > 2 &&
               oldName !== contact.name
             ) {
               this.contactMappings.set(phone, contact.name)
+              logger.info(`📞 Updated contact: ${phone} -> ${contact.name}`)
               updatedCount++
 
+              // Update topic name immediately
               const jid = contact.id
               if (this.chatMappings.has(jid)) {
                 const topicId = this.chatMappings.get(jid)
                 try {
+                  logger.debug(`📝 Updating topic ${topicId} name from "${oldName || "unknown"}" to "${contact.name}"`)
+
                   await this.telegramBot.editForumTopic(this.config.telegram.chatId, topicId, {
                     name: contact.name,
                   })
+
                   logger.info(`📝 ✅ Updated topic name for ${phone}: "${contact.name}"`)
                 } catch (error) {
                   logger.error(`📝 ❌ Could not update topic name for ${phone}:`, error.message)
                 }
               }
             }
-            // Check for profile picture updates
-            if (this.chatMappings.has(contact.id)) {
-              const topicId = this.chatMappings.get(contact.id)
-              await this.sendProfilePicture(topicId, contact.id, true)
-            }
+          }
+
+          // Check for profile picture updates
+          if (contact.id && this.chatMappings.has(contact.id)) {
+            const topicId = this.chatMappings.get(contact.id)
+            await this.sendProfilePicture(topicId, contact.id, true)
           }
         }
         if (updatedCount > 0) {
@@ -2109,25 +2125,30 @@ END:VCARD`
       try {
         let newCount = 0
         for (const contact of contacts) {
-          if (contact.id) {
+          if (contact.id && contact.name) {
             const phone = contact.id.split("@")[0]
+            // Only save real contact names
             if (
-              contact.name &&
               contact.name !== phone &&
               !contact.name.startsWith("+") &&
               contact.name.length > 2 &&
               !this.contactMappings.has(phone)
             ) {
               this.contactMappings.set(phone, contact.name)
+              logger.info(`📞 New contact: ${phone} -> ${contact.name}`)
               newCount++
 
+              // Update topic name if topic exists
               const jid = contact.id
               if (this.chatMappings.has(jid)) {
                 const topicId = this.chatMappings.get(jid)
                 try {
+                  logger.debug(`📝 Updating new contact topic ${topicId} to "${contact.name}"`)
+
                   await this.telegramBot.editForumTopic(this.config.telegram.chatId, topicId, {
                     name: contact.name,
                   })
+
                   logger.info(`📝 ✅ Updated new contact topic name for ${phone}: "${contact.name}"`)
                 } catch (error) {
                   logger.error(`📝 ❌ Could not update new contact topic name for ${phone}:`, error.message)
