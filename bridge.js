@@ -688,7 +688,15 @@ class TelegramBridge {
 
   async handleTelegramVideo(msg, whatsappJid) {
     try {
-      const buffer = await this.downloadTelegramMedia(msg.video.file_id)
+      // Handle both video and animation (GIF) messages
+      const videoData = msg.video || msg.animation
+      if (!videoData) {
+        logger.error("❌ No video or animation data found in message")
+        await this.setReaction(msg.chat.id, msg.message_id, "❌")
+        return
+      }
+
+      const buffer = await this.downloadTelegramMedia(videoData.file_id)
 
       if (buffer) {
         const messageOptions = {
@@ -853,35 +861,68 @@ class TelegramBridge {
   }
 
   async handleTelegramContact(msg, whatsappJid) {
-    try {
-      const contact = msg.contact
-      const vcard = `BEGIN:VCARD
-VERSION:3.0
-FN:${contact.first_name} ${contact.last_name || ""}
-TEL:${contact.phone_number}
-END:VCARD`
+    const sendContact = async (finalTopicId) => {
+      try {
+        const chatId = this.config.telegram.chatId
+        const contactMsg = msg.contact
 
-      const messageOptions = {
-        contacts: {
-          displayName: `${contact.first_name} ${contact.last_name || ""}`,
-          contacts: [
-            {
-              displayName: `${contact.first_name} ${contact.last_name || ""}`,
-              vcard: vcard,
-            },
-          ],
-        },
+        const participant = whatsappJid
+        const phone = participant.split("@")[0]
+        const senderName = this.contactMappings.get(phone) || `+${phone}`
+        const isGroup = whatsappJid.endsWith("@g.us")
+
+        // Extract phone number from vcard
+        let phoneNumber = ""
+        if (contactMsg.phone_number) {
+          phoneNumber = contactMsg.phone_number.trim().replace(/\D/g, "")
+        }
+
+        // Send as Telegram contact if we have phone number
+        if (phoneNumber) {
+          const contactOptions = {
+            message_thread_id: finalTopicId,
+          }
+
+          // Add group sender info if it's a group message
+          if (isGroup && participant !== whatsappJid) {
+            contactOptions.caption = `👤 ${senderName} shared a contact`
+          }
+
+          await this.telegramBot.sendContact(
+            chatId,
+            phoneNumber,
+            contactMsg.first_name + " " + (contactMsg.last_name || ""),
+            contactOptions,
+          )
+        } else {
+          // Fallback to text message if no phone number
+          let caption = `👤 Contact: ${contactMsg.first_name} ${contactMsg.last_name || ""}`
+          if (isGroup && participant !== whatsappJid) {
+            caption = `👤 ${senderName} shared a contact:\n${contactMsg.first_name} ${contactMsg.last_name || ""}`
+          }
+
+          await this.telegramBot.sendMessage(chatId, caption, {
+            message_thread_id: finalTopicId,
+          })
+        }
+      } catch (error) {
+        const desc = error.response?.data?.description || error.message
+        if (desc.includes("message thread not found")) {
+          logger.warn(`🗑️ Contact topic deleted. Recreating...`)
+          const sender = whatsappJid
+          this.chatMappings.delete(sender)
+          this.profilePicCache.delete(sender)
+          await this.saveMappingsToDb()
+          const newTopicId = await this.getOrCreateTopic(sender, { key: { remoteJid: sender } })
+          if (newTopicId) {
+            await sendContact(newTopicId)
+          }
+        } else {
+          logger.error("❌ Failed to handle contact:", desc)
+        }
       }
-
-      const sendResult = await this.whatsappClient.sendMessage(whatsappJid, messageOptions)
-
-      if (sendResult?.key?.id) {
-        await this.setReaction(msg.chat.id, msg.message_id, "👍")
-      }
-    } catch (error) {
-      logger.error("❌ Failed to forward contact to WhatsApp:", error.message, error.stack)
-      await this.setReaction(msg.chat.id, msg.message_id, "❌")
     }
+    await sendContact(topicId)
   }
 
   async downloadTelegramMedia(fileId) {
@@ -1360,26 +1401,38 @@ END:VCARD`
         const senderName = this.contactMappings.get(phone) || `+${phone}`
         const isGroup = whatsappMsg.key.remoteJid.endsWith("@g.us")
 
-        let caption = `👤 Contact: ${contactMsg.displayName}`
-        if (isGroup && participant !== whatsappMsg.key.remoteJid) {
-          caption = `👤 ${senderName} shared a contact:\n${contactMsg.displayName}`
-        }
-
+        // Extract phone number from vcard
         let phoneNumber = ""
         if (contactMsg.vcard) {
           const phoneMatch = contactMsg.vcard.match(/TEL[^:]*:([^\n\r]+)/i)
           if (phoneMatch) {
-            phoneNumber = phoneMatch[1].trim()
+            phoneNumber = phoneMatch[1].trim().replace(/\D/g, "")
           }
         }
 
+        // Send as Telegram contact if we have phone number
         if (phoneNumber) {
-          caption += `\n📱 ${phoneNumber}`
-        }
+          const contactOptions = {
+            message_thread_id: finalTopicId,
+          }
 
-        await this.telegramBot.sendMessage(chatId, caption, {
-          message_thread_id: finalTopicId,
-        })
+          // Add group sender info if it's a group message
+          if (isGroup && participant !== whatsappMsg.key.remoteJid) {
+            contactOptions.caption = `👤 ${senderName} shared a contact`
+          }
+
+          await this.telegramBot.sendContact(chatId, phoneNumber, contactMsg.displayName || "Contact", contactOptions)
+        } else {
+          // Fallback to text message if no phone number
+          let caption = `👤 Contact: ${contactMsg.displayName}`
+          if (isGroup && participant !== whatsappMsg.key.remoteJid) {
+            caption = `👤 ${senderName} shared a contact:\n${contactMsg.displayName}`
+          }
+
+          await this.telegramBot.sendMessage(chatId, caption, {
+            message_thread_id: finalTopicId,
+          })
+        }
       } catch (error) {
         const desc = error.response?.data?.description || error.message
         if (desc.includes("message thread not found")) {
