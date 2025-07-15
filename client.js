@@ -6,9 +6,7 @@ require("./lib/system/functions"), require("./lib/system/scraper"), require("./l
 const cron = require("node-cron")
 const fs = require("fs")
 const colors = require("@colors/colors")
-const logger = require("./logger") // Declare logger variable
-// REMOVED: const { NodeCache } = require("@cacheable/node-cache")
-// REMOVED: const cache = new NodeCache({ stdTTL: env.cooldown })
+const logger = require("./lib/system/logger") // Corrected import path for logger
 
 // Add at the top with other requires
 const TelegramBridge = require("./lib/bridge/telegram-bridge")
@@ -124,11 +122,11 @@ const connect = async () => {
 
           await telegramBridge.sendStartMessage()
         } catch (error) {
-          console.error(colors.red("❌ Failed to start Telegram bridge:"), error)
+          console.error(colors.red("Failed to start Telegram bridge:"), error)
           global.telegramBridge = null // Clear global reference on error
         }
       } else {
-        logger.warn(colors.yellow("⚠️ Telegram bridge disabled - missing environment variables"))
+        logger.warn("Telegram bridge disabled - missing environment variables")
         global.telegramBridge = null
       }
 
@@ -185,7 +183,7 @@ const connect = async () => {
             }
           }
           if (cleanedCount > 0) {
-            logger.info(colors.cyan(`🧹 Cleaned up ${cleanedCount} old processed message IDs from database.`))
+            logger.info(`Cleaned up ${cleanedCount} old processed message IDs from database.`)
             await database.save(global.db) // Save after cleanup
           }
         },
@@ -205,7 +203,7 @@ const connect = async () => {
           }
         }
         if (cleanedCount > 0) {
-          logger.info(colors.cyan(`🧹 Cleaned up ${cleanedCount} old anti-delete spam entries from database.`))
+          logger.info(`Cleaned up ${cleanedCount} old anti-delete spam entries from database.`)
           await database.save(global.db) // Save after cleanup
         }
       }, env.cooldown * 1000) // Run cleanup every `cooldown` seconds
