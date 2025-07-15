@@ -1,39 +1,33 @@
 const colors = require("@colors/colors")
 const moment = require("moment-timezone")
 
-class Logger {
-  constructor() {
-    this.timezone = process.env.TZ || "Asia/Jakarta"
+const log = (level, message, ...args) => {
+  const timestamp = moment().tz("Asia/Jakarta").format("HH:mm:ss")
+  let coloredMessage = message
+
+  switch (level) {
+    case "info":
+      coloredMessage = colors.green(message)
+      break
+    case "warn":
+      coloredMessage = colors.yellow(message)
+      break
+    case "error":
+      coloredMessage = colors.red(message)
+      break
+    case "debug":
+      coloredMessage = colors.blue(message)
+      break
+    default:
+      break
   }
 
-  formatMessage(level, message, data = null) {
-    const timestamp = moment().tz(this.timezone).format("DD/MM/YY HH:mm:ss")
-    let logMessage = `[${timestamp}] [${level.toUpperCase()}] ${message}`
-
-    if (data) {
-      logMessage += ` ${typeof data === "object" ? JSON.stringify(data, null, 2) : data}`
-    }
-
-    return logMessage
-  }
-
-  info(message, data = null) {
-    console.log(colors.green(this.formatMessage("info", message, data)))
-  }
-
-  warn(message, data = null) {
-    console.log(colors.yellow(this.formatMessage("warn", message, data)))
-  }
-
-  error(message, data = null) {
-    console.log(colors.red(this.formatMessage("error", message, data)))
-  }
-
-  debug(message, data = null) {
-    if (process.env.DEBUG === "true") {
-      console.log(colors.gray(this.formatMessage("debug", message, data)))
-    }
-  }
+  console.log(`[${timestamp}] [${level.toUpperCase()}] ${coloredMessage}`, ...args)
 }
 
-module.exports = new Logger()
+module.exports = {
+  info: (message, ...args) => log("info", message, ...args),
+  warn: (message, ...args) => log("warn", message, ...args),
+  error: (message, ...args) => log("error", message, ...args),
+  debug: (message, ...args) => log("debug", message, ...args),
+}
