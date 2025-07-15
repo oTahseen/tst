@@ -1,7 +1,7 @@
 const TelegramBot = require("node-telegram-bot-api")
 const TelegramCommands = require("./telegram-commands")
 const logger = require("../system/logger")
-const fs = require("fs").promises // This is fs.promises
+const fs = require("fs").promises
 const path = require("path")
 const axios = require("axios")
 const sharp = require("sharp")
@@ -33,8 +33,8 @@ class TelegramBridge {
     this.topicVerificationCache = new Map()
     this.creatingTopics = new Map()
     this.filters = new Set()
-    this.authenticatedUsers = new Map() // userId -> { authenticated: true, timestamp: Date }
-    this.authTimeout = 24 * 60 * 60 * 1000 // 24 hours in milliseconds
+    this.authenticatedUsers = new Map()
+    this.authTimeout = 24 * 60 * 60 * 1000
     this.password = process.env.TELEGRAM_PASSWORD || "admin123"
     this.sudoUsers = new Set((process.env.TELEGRAM_SUDO_USERS || "").split(",").filter((id) => id.trim()))
     this.config = {
@@ -50,8 +50,8 @@ class TelegramBridge {
           statusSync: true,
           callLogs: true,
           profilePicSync: true,
-          welcomeMessage: process.env.TELEGRAM_WELCOME_MESSAGE !== "false", // Default true unless explicitly set to false
-          autoViewStatus: true, // New feature flag
+          welcomeMessage: process.env.TELEGRAM_WELCOME_MESSAGE !== "false",
+          autoViewStatus: true,
         },
       },
     }
@@ -80,7 +80,6 @@ class TelegramBridge {
       await this.loadMappingsFromDb()
       await this.loadFiltersFromDb()
 
-      // Wait for WhatsApp to be ready before syncing
       if (this.whatsappClient?.user) {
         await this.syncContacts()
         await this.updateTopicNames()
@@ -113,10 +112,8 @@ class TelegramBridge {
 
       if (bridgeData.chatMappings && typeof bridgeData.chatMappings === "object") {
         for (const [jid, chatMapData] of Object.entries(bridgeData.chatMappings)) {
-          // chatMapData is expected to be { telegramTopicId: number, profilePicUrl: string, lastActivity: Date }
-          // Handle both new object format and old direct number format for topicId
           const topicId =
-            typeof chatMapData === "object" && chatMapData !== null ? chatMapData.telegramTopicId : chatMapData // Fallback for old format
+            typeof chatMapData === "object" && chatMapData !== null ? chatMapData.telegramTopicId : chatMapData
 
           if (jid && typeof topicId === "number") {
             this.chatMappings.set(jid, topicId)
@@ -241,12 +238,10 @@ class TelegramBridge {
   }
 
   isUserAuthenticated(userId) {
-    // Check if user is sudo user
     if (this.sudoUsers.has(userId.toString())) {
       return true
     }
 
-    // Check if user is authenticated and not expired
     const authData = this.authenticatedUsers.get(userId)
     if (!authData) return false
 
@@ -501,7 +496,6 @@ class TelegramBridge {
 
       let sentMessage
 
-      // If profile picture exists, send it with welcome text as caption
       if (initialProfilePicUrl) {
         sentMessage = await this.telegramBot.sendPhoto(chatId, initialProfilePicUrl, {
           message_thread_id: topicId,
@@ -509,11 +503,9 @@ class TelegramBridge {
           parse_mode: "Markdown",
         })
 
-        // Cache the profile picture URL
         this.profilePicCache.set(jid, initialProfilePicUrl)
         await this.saveMappingsToDb()
       } else {
-        // No profile picture, send just the welcome text
         sentMessage = await this.telegramBot.sendMessage(chatId, welcomeText, {
           message_thread_id: topicId,
           parse_mode: "Markdown",
@@ -548,7 +540,6 @@ class TelegramBridge {
           this.profilePicCache.delete(jid)
           await this.saveMappingsToDb()
 
-          // Simple recreation without dummy message
           const newTopicId = await this.getOrCreateTopic(jid, { key: { remoteJid: jid } })
 
           if (newTopicId) {
@@ -582,7 +573,6 @@ class TelegramBridge {
         return
       }
 
-      // Check authentication for topic messages
       const userId = msg.from.id
       if (!this.isUserAuthenticated(userId)) {
         await this.telegramBot.sendMessage(
@@ -607,7 +597,7 @@ class TelegramBridge {
       } else if (msg.video) {
         await this.handleTelegramVideo(msg, whatsappJid)
       } else if (msg.animation) {
-        await this.handleTelegramVideo(msg, whatsappJid) // Telegram animations are videos
+        await this.handleTelegramVideo(msg, whatsappJid)
       } else if (msg.video_note) {
         await this.handleTelegramVideoNote(msg, whatsappJid)
       } else if (msg.voice) {
@@ -746,17 +736,17 @@ class TelegramBridge {
       if (buffer) {
         const fileName = `voice_${Date.now()}.ogg`
         const filePath = path.join(this.tempDir, fileName)
-        await fs.writeFile(filePath, buffer) // Save to temporary file
+        await fs.writeFile(filePath, buffer)
 
         const messageOptions = {
-          audio: await fs.readFile(filePath), // Corrected: Use await fs.readFile
+          audio: await fs.readFile(filePath),
           mimetype: "audio/ogg; codecs=opus",
           ptt: true,
         }
 
         const sendResult = await this.whatsappClient.sendMessage(whatsappJid, messageOptions)
 
-        await fs.unlink(filePath).catch(() => {}) // Clean up temporary file
+        await fs.unlink(filePath).catch(() => {})
 
         if (sendResult?.key?.id) {
           await this.setReaction(msg.chat.id, msg.message_id, "👍")
@@ -867,11 +857,7 @@ class TelegramBridge {
   async handleTelegramContact(msg, whatsappJid) {
     try {
       const contact = msg.contact
-      const vcard = `BEGIN:VCARD
-VERSION:3.0
-FN:${contact.first_name} ${contact.last_name || ""}
-TEL:${contact.phone_number}
-END:VCARD`
+      const vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${contact.first_name} ${contact.last_name || ""}\nTEL:${contact.phone_number}\nEND:VCARD`
 
       const messageOptions = {
         contacts: {
@@ -1041,7 +1027,7 @@ END:VCARD`
             )
             if (!innerType) throw new Error("No inner media type found in viewOnceMessage")
             mediaMessage = innerMsg[innerType]
-            mediaTypeHint = innerType.replace("Message", "") // Update hint for download
+            mediaTypeHint = innerType.replace("Message", "")
             fileName += `.${mime.extension(mediaMessage.mimetype) || "bin"}`
             break
         }
@@ -1075,7 +1061,7 @@ END:VCARD`
               ? await this.telegramBot.sendAnimation(chatId, filePath, opts)
               : await this.telegramBot.sendVideo(chatId, filePath, opts)
             break
-          case "ptv": // PTV is handled as video_note in Telegram
+          case "ptv":
           case "video_note":
             const notePath = await this.convertToVideoNote(filePath)
             await this.telegramBot.sendVideoNote(chatId, notePath, { message_thread_id: finalTopicId })
@@ -1207,7 +1193,6 @@ END:VCARD`
 
   findWhatsAppJidByTopic(topicId) {
     for (const [jid, topicData] of this.chatMappings.entries()) {
-      // Check if topicData is an object with telegramTopicId or just the topicId directly
       const currentTopicId = typeof topicData === "object" && topicData !== null ? topicData.telegramTopicId : topicData
       if (currentTopicId === topicId) {
         return jid
@@ -1238,7 +1223,6 @@ END:VCARD`
         const phone = jid.split("@")[0]
         let contactName = null
 
-        // Extract name from contact - prioritize saved contact name
         if (contact.name && contact.name !== phone && !contact.name.startsWith("+") && contact.name.length > 2) {
           contactName = contact.name
         } else if (
@@ -1455,7 +1439,6 @@ END:VCARD`
         this.profilePicCache.delete("status@broadcast")
         await this.saveMappingsToDb()
 
-        // Use existing recreation pattern - just retry the function
         await this.handleStatusMessage(whatsappMsg, text)
       } else {
         logger.error("❌ Error handling status message:", error)
@@ -1510,7 +1493,6 @@ END:VCARD`
 
         const newTopicId = await this.getOrCreateTopic("status@broadcast", whatsappMsg)
         if (newTopicId) {
-          // Retry with new topic ID
           await this.forwardStatusMedia(whatsappMsg, newTopicId, caption, mediaType)
         }
       } else {
@@ -1762,7 +1744,6 @@ END:VCARD`
         })
 
         if (newTopicId) {
-          // Retry sending the call notification with new topic
           const phone = callerId.split("@")[0]
           const callerName = this.contactMappings.get(phone) || `+${phone}`
 
@@ -1916,7 +1897,6 @@ END:VCARD`
 
     try {
       const chatId = this.config.telegram.chatId
-      // Attempt to get chat info for the topic. If it fails, the topic doesn't exist.
       await this.telegramBot.getForumTopic(chatId, topicId)
       this.topicVerificationCache.set(topicId, true)
       return true
@@ -2079,7 +2059,6 @@ END:VCARD`
       return
     }
 
-    // Enhanced contact sync and topic name update handlers
     this.whatsappClient.ev.on("contacts.update", async (contacts) => {
       try {
         let updatedCount = 0
@@ -2088,7 +2067,6 @@ END:VCARD`
             const phone = contact.id.split("@")[0]
             const oldName = this.contactMappings.get(phone)
 
-            // Only update if it's a real contact name (not handle name)
             if (
               contact.name !== phone &&
               !contact.name.startsWith("+") &&
@@ -2099,7 +2077,6 @@ END:VCARD`
               logger.info(`📞 Updated contact: ${phone} -> ${contact.name}`)
               updatedCount++
 
-              // Update topic name immediately
               const jid = contact.id
               if (this.chatMappings.has(jid)) {
                 const topicId = this.chatMappings.get(jid)
@@ -2118,7 +2095,6 @@ END:VCARD`
             }
           }
 
-          // Check for profile picture updates
           if (contact.id && this.chatMappings.has(contact.id)) {
             const topicId = this.chatMappings.get(contact.id)
             await this.sendProfilePicture(topicId, contact.id, true)
@@ -2139,7 +2115,6 @@ END:VCARD`
         for (const contact of contacts) {
           if (contact.id && contact.name) {
             const phone = contact.id.split("@")[0]
-            // Only save real contact names
             if (
               contact.name !== phone &&
               !contact.name.startsWith("+") &&
@@ -2150,7 +2125,6 @@ END:VCARD`
               logger.info(`📞 New contact: ${phone} -> ${contact.name}`)
               newCount++
 
-              // Update topic name if topic exists
               const jid = contact.id
               if (this.chatMappings.has(jid)) {
                 const topicId = this.chatMappings.get(jid)
