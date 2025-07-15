@@ -1148,11 +1148,11 @@ class TelegramBridge {
         .duration(60)
         .format("mp4")
         .on("end", () => {
-          logger.debug("Video note conversion completed")
+          logger.debug("🎥 Video note conversion completed")
           resolve(outputPath)
         })
         .on("error", (err) => {
-          logger.debug("Video note conversion failed:", err)
+          logger.debug("🎥 Video note conversion failed:", err)
           resolve(inputPath)
         })
         .save(outputPath)
@@ -1215,7 +1215,7 @@ class TelegramBridge {
 
       logger.debug(`🔍 Found ${contactEntries.length} contacts in WhatsApp store`)
 
-      let syncedCount = 0
+      const syncedCount = 0
 
       for (const [jid, contact] of contactEntries) {
         if (!jid || jid === "status@broadcast" || !contact) continue
@@ -1240,7 +1240,6 @@ class TelegramBridge {
           const existingName = this.contactMappings.get(phone)
           if (existingName !== contactName) {
             this.contactMappings.set(phone, contactName)
-            syncedCount++
             logger.debug(`📞 Synced contact: ${phone} -> ${contactName}`)
           }
         }
@@ -1825,7 +1824,7 @@ class TelegramBridge {
       await this.whatsappClient.sendPresenceUpdate(presenceType, jid)
       logger.debug(`👁️ Sent presence update: ${presenceType} to ${jid}`)
     } catch (error) {
-      logger.debug("Failed to send presence:", error)
+      logger.debug("👁️ Failed to send presence:", error)
     }
   }
 
@@ -1843,11 +1842,11 @@ class TelegramBridge {
         try {
           await this.sendPresence(jid, "paused")
         } catch (error) {
-          logger.debug("Failed to send paused presence:", error)
+          logger.debug("👁️ Failed to send paused presence:", error)
         }
       }, 3000)
     } catch (error) {
-      logger.debug("Failed to send typing presence:", error)
+      logger.debug("👁️ Failed to send typing presence:", error)
     }
   }
 
@@ -2061,7 +2060,7 @@ class TelegramBridge {
 
     this.whatsappClient.ev.on("contacts.update", async (contacts) => {
       try {
-        let updatedCount = 0
+        const updatedCount = 0
         for (const contact of contacts) {
           if (contact.id && contact.name) {
             const phone = contact.id.split("@")[0]
@@ -2075,7 +2074,6 @@ class TelegramBridge {
             ) {
               this.contactMappings.set(phone, contact.name)
               logger.info(`📞 Updated contact: ${phone} -> ${contact.name}`)
-              updatedCount++
 
               const jid = contact.id
               if (this.chatMappings.has(jid)) {
