@@ -1,7 +1,7 @@
 const TelegramBot = require("node-telegram-bot-api")
 const TelegramCommands = require("./telegram-commands")
 const logger = require("../system/logger")
-const fs = require("fs").promises
+const fs = require("fs").promises // This is fs.promises
 const path = require("path")
 const axios = require("axios")
 const sharp = require("sharp")
@@ -31,7 +31,7 @@ class TelegramBridge {
     this.messageQueue = new Map()
     this.lastPresenceUpdate = new Map()
     this.topicVerificationCache = new Map()
-    this.creatingTopics = new Map() // userId -> { authenticated: true, timestamp: Date }
+    this.creatingTopics = new Map()
     this.filters = new Set()
     this.authenticatedUsers = new Map() // userId -> { authenticated: true, timestamp: Date }
     this.authTimeout = 24 * 60 * 60 * 1000 // 24 hours in milliseconds
@@ -749,7 +749,7 @@ class TelegramBridge {
         await fs.writeFile(filePath, buffer) // Save to temporary file
 
         const messageOptions = {
-          audio: fs.readFileSync(filePath), // Read from temporary file
+          audio: await fs.readFile(filePath), // Corrected: Use await fs.readFile
           mimetype: "audio/ogg; codecs=opus",
           ptt: true,
         }
