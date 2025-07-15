@@ -52,6 +52,7 @@ class TelegramBridge {
           profilePicSync: true,
           welcomeMessage: process.env.TELEGRAM_WELCOME_MESSAGE !== "false",
           autoViewStatus: true,
+          telegramForwardAsAI: process.env.TELEGRAM_FORWARD_AS_AI === "true",
         },
       },
     }
@@ -642,7 +643,13 @@ class TelegramBridge {
       messageOptions.text = `🫥 ${originalText}`
     }
 
-    const sendResult = await this.whatsappClient.sendMessage(whatsappJid, messageOptions)
+    let sendResult
+    if (this.config.telegram.features.telegramForwardAsAI) {
+      // Use sendFromAI for AI label, passing null for quoted message as it's a new message from Telegram
+      sendResult = await this.whatsappClient.sendFromAI(whatsappJid, messageOptions.text, null)
+    } else {
+      sendResult = await this.whatsappClient.sendMessage(whatsappJid, messageOptions)
+    }
 
     if (sendResult?.key?.id) {
       await this.setReaction(msg.chat.id, msg.message_id, "👍")
