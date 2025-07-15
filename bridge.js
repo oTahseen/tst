@@ -100,7 +100,7 @@ class TelegramBridge {
           contactMappings: {},
           filters: [],
         }
-        logger.info("Created new bridge data structure in database")
+        logger.debug("Created new bridge data structure in database")
       }
 
       const bridgeData = global.db.bridge
@@ -148,7 +148,7 @@ class TelegramBridge {
         })
       }
 
-      logger.info(
+      logger.debug(
         `Loaded mappings from DB: ${this.chatMappings.size} chats, ${this.userMappings.size} users, ${this.contactMappings.size} contacts, ${this.filters.size} filters`,
       )
     } catch (error) {
@@ -201,7 +201,7 @@ class TelegramBridge {
         await this.database.save(global.db)
       }
 
-      logger.info(
+      logger.debug(
         `Saved bridge mappings: ${Object.keys(chatMappingsObj).length} chats, ${Object.keys(userMappingsObj).length} users, ${Object.keys(contactMappingsObj).length} contacts`,
       )
     } catch (error) {
@@ -220,7 +220,7 @@ class TelegramBridge {
           }
         })
       }
-      logger.info(`Loaded ${this.filters.size} filters from DB`)
+      logger.debug(`Loaded ${this.filters.size} filters from DB`)
     } catch (error) {
       logger.error("Failed to load filters:", error)
       this.filters = new Set()
@@ -289,7 +289,7 @@ class TelegramBridge {
       logger.error("Telegram bot error:", error)
     })
 
-    logger.info("Telegram message handlers set up")
+    logger.debug("Telegram message handlers set up")
   }
 
   wrapHandler(handler) {
@@ -428,7 +428,7 @@ class TelegramBridge {
         this.chatMappings.set(chatJid, topic.message_thread_id)
         await this.saveMappingsToDb()
 
-        logger.info(`Created Telegram topic: "${topicName}" (ID: ${topic.message_thread_id}) for ${chatJid}`)
+        logger.debug(`Created Telegram topic: "${topicName}" (ID: ${topic.message_thread_id}) for ${chatJid}`)
 
         if (!isStatus && !isCall && this.config.telegram.features.welcomeMessage) {
           await this.sendWelcomeMessage(topic.message_thread_id, chatJid, isGroup, whatsappMsg, profilePicUrl)
@@ -1096,7 +1096,7 @@ class TelegramBridge {
         }
 
         await fs.unlink(filePath).catch(() => {})
-        logger.info(`${mediaTypeHint} sent to topic ${finalTopicId}`)
+        logger.debug(`${mediaTypeHint} sent to topic ${finalTopicId}`)
       } catch (error) {
         const desc = error.response?.data?.description || error.message
         if (desc.includes("message thread not found")) {
@@ -1208,7 +1208,7 @@ class TelegramBridge {
         return
       }
 
-      logger.info("Syncing contacts from WhatsApp...")
+      logger.debug("Syncing contacts from WhatsApp...")
 
       const contacts = this.whatsappClient.store?.contacts || {}
       const contactEntries = Object.entries(contacts)
@@ -1247,7 +1247,7 @@ class TelegramBridge {
       }
 
       await this.saveMappingsToDb()
-      logger.info(`Synced ${syncedCount} new/updated contacts (Total: ${this.contactMappings.size})`)
+      logger.debug(`Synced ${syncedCount} new/updated contacts (Total: ${this.contactMappings.size})`)
 
       if (syncedCount > 0) {
         await this.updateTopicNames()
@@ -1265,7 +1265,7 @@ class TelegramBridge {
         return
       }
 
-      logger.info("Updating Telegram topic names...")
+      logger.debug("Updating Telegram topic names...")
       let updatedCount = 0
 
       for (const [jid, topicId] of this.chatMappings.entries()) {
@@ -1279,7 +1279,7 @@ class TelegramBridge {
                 name: contactName,
               })
 
-              logger.info(`Updated topic name for ${phone}: "${contactName}"`)
+              logger.debug(`Updated topic name for ${phone}: "${contactName}"`)
               updatedCount++
             } catch (error) {
               logger.error(`Failed to update topic ${topicId} for ${phone} to "${contactName}":`, error.message)
@@ -1290,7 +1290,7 @@ class TelegramBridge {
         }
       }
 
-      logger.info(`Updated ${updatedCount} topic names`)
+      logger.debug(`Updated ${updatedCount} topic names`)
     } catch (error) {
       logger.error("Failed to update topic names:", error)
     }
@@ -1307,7 +1307,7 @@ class TelegramBridge {
         const senderName = this.contactMappings.get(phone) || `+${phone}`
         const isGroup = whatsappMsg.key.remoteJid.endsWith("@g.us")
 
-        let caption = "Location"
+        let caption = "📍 Location"
         if (isGroup && participant !== whatsappMsg.key.remoteJid) {
           caption = `👤 ${senderName} shared a location`
         }
@@ -1407,7 +1407,7 @@ class TelegramBridge {
       const topicId = await this.getOrCreateTopic("status@broadcast", whatsappMsg)
       if (!topicId) return
 
-      let statusText = `*Status from ${contactName}* (+${phone})`
+      let statusText = `📱 *Status from ${contactName}* (+${phone})`
 
       if (text) {
         statusText += `\n\n${text}`
@@ -1642,9 +1642,9 @@ class TelegramBridge {
       }
 
       if (currentProfilePicUrl) {
-        const caption = isUpdate ? "Profile picture updated" : "Profile Picture"
+        const caption = isUpdate ? "📸 Profile picture updated" : "📸 Profile Picture"
 
-        logger.info(`Sending ${isUpdate ? "updated" : "initial"} profile picture for ${jid}`)
+        logger.debug(`Sending ${isUpdate ? "updated" : "initial"} profile picture for ${jid}`)
 
         await this.telegramBot.sendPhoto(this.config.telegram.chatId, currentProfilePicUrl, {
           message_thread_id: topicId,
@@ -1653,7 +1653,7 @@ class TelegramBridge {
 
         this.profilePicCache.set(jid, currentProfilePicUrl)
         await this.saveMappingsToDb()
-        logger.info(`Profile picture ${isUpdate ? "update" : "sent"} for ${jid}`)
+        logger.debug(`Profile picture ${isUpdate ? "update" : "sent"} for ${jid}`)
       } else {
         logger.debug(`No profile picture available for ${jid}`)
       }
@@ -1674,9 +1674,9 @@ class TelegramBridge {
         return
       }
 
-      const caption = isUpdate ? "Profile picture updated" : "Profile Picture"
+      const caption = isUpdate ? "📸 Profile picture updated" : "📸 Profile Picture"
 
-      logger.info(`Sending ${isUpdate ? "updated" : "initial"} profile picture for ${jid}`)
+      logger.debug(`Sending ${isUpdate ? "updated" : "initial"} profile picture for ${jid}`)
 
       await this.telegramBot.sendPhoto(this.config.telegram.chatId, profilePicUrl, {
         message_thread_id: topicId,
@@ -1685,7 +1685,7 @@ class TelegramBridge {
 
       this.profilePicCache.set(jid, profilePicUrl)
       await this.saveMappingsToDb()
-      logger.info(`Profile picture ${isUpdate ? "update" : "sent"} for ${jid}`)
+      logger.debug(`Profile picture ${isUpdate ? "update" : "sent"} for ${jid}`)
     } catch (error) {
       logger.error(`Could not send profile picture for ${jid}:`, error)
     }
@@ -1718,18 +1718,18 @@ class TelegramBridge {
       }
 
       const callMessage =
-        `**Incoming Call**\n\n` +
-        `**From:** ${callerName}\n` +
-        `**Number:** +${phone}\n` +
-        `**Time:** ${new Date().toLocaleString()}\n` +
-        `**Status:** ${callEvent.status || "Incoming"}`
+        `📞 **Incoming Call**\n\n` +
+        `👤 **From:** ${callerName}\n` +
+        `📱 **Number:** +${phone}\n` +
+        `⏰ **Time:** ${new Date().toLocaleString()}\n` +
+        `📋 **Status:** ${callEvent.status || "Incoming"}`
 
       await this.telegramBot.sendMessage(this.config.telegram.chatId, callMessage, {
         message_thread_id: topicId,
         parse_mode: "Markdown",
       })
 
-      logger.info(`Sent call notification from ${callerName}`)
+      logger.debug(`Sent call notification from ${callerName}`)
     } catch (error) {
       const desc = error.response?.data?.description || error.message
       if (desc.includes("message thread not found")) {
@@ -1748,18 +1748,18 @@ class TelegramBridge {
           const callerName = this.contactMappings.get(phone) || `+${phone}`
 
           const callMessage =
-            `**Incoming Call**\n\n` +
-            `**From:** ${callerName}\n` +
-            `**Number:** +${phone}\n` +
-            `**Time:** ${new Date().toLocaleString()}\n` +
-            `**Status:** ${callEvent.status || "Incoming"}`
+            `📞 **Incoming Call**\n\n` +
+            `👤 **From:** ${callerName}\n` +
+            `📱 **Number:** +${phone}\n` +
+            `⏰ **Time:** ${new Date().toLocaleString()}\n` +
+            `📋 **Status:** ${callEvent.status || "Incoming"}`
 
           await this.telegramBot.sendMessage(this.config.telegram.chatId, callMessage, {
             message_thread_id: newTopicId,
             parse_mode: "Markdown",
           })
 
-          logger.info(`Sent call notification from ${callerName} after topic recreation`)
+          logger.debug(`Sent call notification from ${callerName} after topic recreation`)
         }
       } else {
         logger.error("Error handling call notification:", error)
@@ -1798,7 +1798,7 @@ class TelegramBridge {
           message_thread_id: msg.message_thread_id,
         })
         await this.setReaction(msg.chat.id, msg.message_id, "✅")
-        logger.info(`Sent status reply to ${statusJid} for ${contactName}`)
+        logger.debug(`Sent status reply to ${statusJid} for ${contactName}`)
       } else {
         throw new Error("Failed to send status reply")
       }
@@ -1856,7 +1856,7 @@ class TelegramBridge {
 
   async recreateMissingTopics() {
     try {
-      logger.info("Checking for missing topics...")
+      logger.debug("Checking for missing topics...")
       const toRecreate = []
 
       for (const [jid, topicId] of this.chatMappings.entries()) {
@@ -1881,12 +1881,12 @@ class TelegramBridge {
         }
         await this.getOrCreateTopic(jid, dummyMsg)
 
-        logger.info(`Recreated topic for ${jid}`)
+        logger.debug(`Recreated topic for ${jid}`)
         await new Promise((resolve) => setTimeout(resolve, 500))
       }
 
       if (toRecreate.length > 0) {
-        logger.info(`Recreated ${toRecreate.length} missing topics`)
+        logger.debug(`Recreated ${toRecreate.length} missing topics`)
       }
     } catch (error) {
       logger.error("Error recreating missing topics:", error)
@@ -1956,7 +1956,7 @@ class TelegramBridge {
         }
       }, 60000)
 
-      logger.info("QR code sent to Telegram successfully")
+      logger.debug("QR code sent to Telegram successfully")
     } catch (error) {
       logger.error("Error sending QR code to Telegram:", error)
       throw error
@@ -1995,7 +1995,7 @@ class TelegramBridge {
         }
       }, 60000)
 
-      logger.info("QR code sent to Telegram log channel successfully")
+      logger.debug("QR code sent to Telegram log channel successfully")
     } catch (error) {
       logger.error("Error sending QR code to log channel:", error)
       throw error
@@ -2010,13 +2010,13 @@ class TelegramBridge {
       const logChannel = this.config.telegram.logChannel
 
       const startMessage =
-        `*Neoxr WhatsApp Bridge Started!*\n\n` +
-        `WhatsApp: Connected\n` +
-        `Telegram Bridge: Active\n` +
-        `Contacts: ${this.contactMappings.size} synced\n` +
-        `Chats: ${this.chatMappings.size} mapped\n` +
-        `Ready to bridge messages!\n\n` +
-        `Started at: ${new Date().toLocaleString()}`
+        `🚀 *Neoxr WhatsApp Bridge Started!*\n\n` +
+        `✅ WhatsApp: Connected\n` +
+        `✅ Telegram Bridge: Active\n` +
+        `📞 Contacts: ${this.contactMappings.size} synced\n` +
+        `💬 Chats: ${this.chatMappings.size} mapped\n` +
+        `🔗 Ready to bridge messages!\n\n` +
+        `⏰ Started at: ${new Date().toLocaleString()}`
 
       if (chatId && !chatId.includes("YOUR_CHAT_ID")) {
         await this.telegramBot.sendMessage(chatId, startMessage, {
@@ -2077,7 +2077,7 @@ class TelegramBridge {
               oldName !== contact.name
             ) {
               this.contactMappings.set(phone, contact.name)
-              logger.info(`Updated contact: ${phone} -> ${contact.name}`)
+              logger.debug(`Updated contact: ${phone} -> ${contact.name}`)
               updatedCount++
 
               const jid = contact.id
@@ -2090,7 +2090,7 @@ class TelegramBridge {
                     name: contact.name,
                   })
 
-                  logger.info(`Updated topic name for ${phone}: "${contact.name}"`)
+                  logger.debug(`Updated topic name for ${phone}: "${contact.name}"`)
                 } catch (error) {
                   logger.error(`Could not update topic name for ${phone}:`, error.message)
                 }
@@ -2104,7 +2104,7 @@ class TelegramBridge {
           }
         }
         if (updatedCount > 0) {
-          logger.info(`Processed ${updatedCount} contact updates`)
+          logger.debug(`Processed ${updatedCount} contact updates`)
           await this.saveMappingsToDb()
         }
       } catch (error) {
@@ -2125,7 +2125,7 @@ class TelegramBridge {
               !this.contactMappings.has(phone)
             ) {
               this.contactMappings.set(phone, contact.name)
-              logger.info(`New contact: ${phone} -> ${contact.name}`)
+              logger.debug(`New contact: ${phone} -> ${contact.name}`)
               newCount++
 
               const jid = contact.id
@@ -2138,7 +2138,7 @@ class TelegramBridge {
                     name: contact.name,
                   })
 
-                  logger.info(`Updated new contact topic name for ${phone}: "${contact.name}"`)
+                  logger.debug(`Updated new contact topic name for ${phone}: "${contact.name}"`)
                 } catch (error) {
                   logger.error(`Could not update new contact topic name for ${phone}:`, error.message)
                 }
@@ -2147,7 +2147,7 @@ class TelegramBridge {
           }
         }
         if (newCount > 0) {
-          logger.info(`Added ${newCount} new contacts`)
+          logger.debug(`Added ${newCount} new contacts`)
           await this.saveMappingsToDb()
         }
       } catch (error) {
@@ -2161,7 +2161,7 @@ class TelegramBridge {
       }
     })
 
-    logger.info("WhatsApp event handlers set up for Telegram bridge")
+    logger.debug("WhatsApp event handlers set up for Telegram bridge")
   }
 
   async shutdown() {
@@ -2169,7 +2169,7 @@ class TelegramBridge {
 
     try {
       await this.saveMappingsToDb()
-      logger.info("Bridge mappings saved before shutdown")
+      logger.debug("Bridge mappings saved before shutdown")
     } catch (error) {
       logger.error("Failed to save mappings during shutdown:", error)
     }
@@ -2181,7 +2181,7 @@ class TelegramBridge {
     if (this.telegramBot) {
       try {
         await this.telegramBot.stopPolling()
-        logger.info("Telegram bot polling stopped.")
+        logger.debug("Telegram bot polling stopped.")
       } catch (error) {
         logger.warn("Error stopping Telegram polling:", error)
       }
@@ -2192,7 +2192,7 @@ class TelegramBridge {
       for (const file of tmpFiles) {
         await fs.unlink(path.join(this.tempDir, file))
       }
-      logger.info("Temp directory cleaned.")
+      logger.debug("Temp directory cleaned.")
     } catch (error) {
       logger.warn("Could not clean temp directory:", error)
     }
