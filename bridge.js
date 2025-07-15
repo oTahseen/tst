@@ -688,7 +688,8 @@ class TelegramBridge {
 
   async handleTelegramVideo(msg, whatsappJid) {
     try {
-      const buffer = await this.downloadTelegramMedia(msg.video.file_id)
+      const fileId = msg.video?.file_id || msg.animation?.file_id
+      const buffer = await this.downloadTelegramMedia(fileId)
 
       if (buffer) {
         const messageOptions = {
@@ -853,528 +854,48 @@ class TelegramBridge {
   }
 
   async handleTelegramContact(msg, whatsappJid) {
-    try {
-      const contact = msg.contact
-      const vcard = `BEGIN:VCARD
-VERSION:3.0
-FN:${contact.first_name} ${contact.last_name || ""}
-TEL:${contact.phone_number}
-END:VCARD`
-
-      const messageOptions = {
-        contacts: {
-          displayName: `${contact.first_name} ${contact.last_name || ""}`,
-          contacts: [
-            {
-              displayName: `${contact.first_name} ${contact.last_name || ""}`,
-              vcard: vcard,
-            },
-          ],
-        },
-      }
-
-      const sendResult = await this.whatsappClient.sendMessage(whatsappJid, messageOptions)
-
-      if (sendResult?.key?.id) {
-        await this.setReaction(msg.chat.id, msg.message_id, "👍")
-      }
-    } catch (error) {
-      logger.error("❌ Failed to forward contact to WhatsApp:", error.message, error.stack)
-      await this.setReaction(msg.chat.id, msg.message_id, "❌")
-    }
-  }
-
-  async downloadTelegramMedia(fileId) {
-    try {
-      const fileInfo = await this.telegramBot.getFile(fileId)
-      const fileUrl = `https://api.telegram.org/file/bot${this.config.telegram.botToken}/${fileInfo.file_path}`
-
-      const response = await axios.get(fileUrl, {
-        responseType: "arraybuffer",
-        timeout: 30000,
-      })
-
-      return Buffer.from(response.data)
-    } catch (error) {
-      logger.error("❌ Failed to download Telegram media:", error)
-      return null
-    }
-  }
-
-  async _downloadWhatsAppMediaContent(whatsappMsg) {
-    try {
-      const m = whatsappMsg.message ?? {}
-      const contentType = Object.keys(m).find((key) =>
-        [
-          "imageMessage",
-          "videoMessage",
-          "audioMessage",
-          "documentMessage",
-          "stickerMessage",
-          "viewOnceMessage",
-          "ptvMessage",
-        ].includes(key),
-      )
-
-      if (!contentType) {
-        logger.warn("No supported media type found in message:", Object.keys(m))
-        return null
-      }
-
-      let mediaMessage = m[contentType]
-      let actualMediaType = contentType
-
-      if (contentType === "viewOnceMessage") {
-        const innerMsg = m.viewOnceMessage?.message
-        const innerType = Object.keys(innerMsg || {}).find((key) =>
-          ["imageMessage", "videoMessage", "audioMessage", "documentMessage", "stickerMessage", "ptvMessage"].includes(
-            key,
-          ),
-        )
-        if (!innerType) {
-          logger.warn("No inner media type found in viewOnceMessage")
-          return null
-        }
-        mediaMessage = innerMsg?.[innerType]
-        actualMediaType = innerType
-      }
-
-      if (actualMediaType === "ptvMessage" || (actualMediaType === "videoMessage" && mediaMessage?.ptv)) {
-        actualMediaType = "ptv"
-      } else if (actualMediaType.includes("image")) {
-        actualMediaType = "image"
-      } else if (actualMediaType.includes("video")) {
-        actualMediaType = "video"
-      } else if (actualMediaType.includes("audio")) {
-        actualMediaType = "audio"
-      } else if (actualMediaType.includes("sticker")) {
-        actualMediaType = "sticker"
-      } else if (actualMediaType.includes("document")) {
-        actualMediaType = "document"
-      } else {
-        logger.warn("Unknown media type for download:", actualMediaType)
-        return null
-      }
-
-      if (!mediaMessage?.mediaKey) {
-        logger.error("Missing mediaKey (cannot decrypt) for", actualMediaType)
-        return null
-      }
-
-      const stream = await downloadContentFromMessage(mediaMessage, actualMediaType)
-
-      let buffer = Buffer.alloc(0)
-      for await (const chunk of stream) {
-        buffer = Buffer.concat([buffer, chunk])
-      }
-
-      if (!buffer || buffer.length === 0) {
-        throw new Error(`Downloaded buffer is empty for ${actualMediaType}`)
-      }
-
-      const mimetype = mediaMessage.mimetype
-      const filename = mediaMessage.fileName || `media-${Date.now()}.${mime.extension(mimetype) || "bin"}`
-
-      return { buffer, mimetype, filename }
-    } catch (error) {
-      logger.error(`❌ Failed to download WhatsApp media content: ${error.message}`, error)
-      return null
-    }
-  }
-
-  async handleWhatsAppMedia(whatsappMsg, mediaTypeHint, topicId, isOutgoing = false) {
-    const sendMedia = async (finalTopicId) => {
-      try {
-        let mediaMessage
-        let fileName = `media_${Date.now()}`
-        let caption = this.extractText(whatsappMsg)
-        const sender = whatsappMsg.key.remoteJid
-
-        switch (mediaTypeHint) {
-          case "image":
-            mediaMessage = whatsappMsg.message.imageMessage
-            fileName += ".jpg"
-            break
-          case "video":
-            mediaMessage = whatsappMsg.message.videoMessage
-            fileName += ".mp4"
-            break
-          case "video_note":
-            mediaMessage = whatsappMsg.message.ptvMessage || whatsappMsg.message.videoMessage
-            fileName += ".mp4"
-            break
-          case "audio":
-            mediaMessage = whatsappMsg.message.audioMessage
-            fileName += ".ogg"
-            break
-          case "document":
-            mediaMessage = whatsappMsg.message.documentMessage
-            fileName = mediaMessage.fileName || `document_${Date.now()}`
-            break
-          case "sticker":
-            mediaMessage = whatsappMsg.message.stickerMessage
-            fileName += ".webp"
-            break
-          case "view_once":
-            const innerMsg = whatsappMsg.message.viewOnceMessage?.message
-            const innerType = Object.keys(innerMsg || {}).find((key) =>
-              [
-                "imageMessage",
-                "videoMessage",
-                "audioMessage",
-                "documentMessage",
-                "stickerMessage",
-                "ptvMessage",
-              ].includes(key),
-            )
-            if (!innerType) throw new Error("No inner media type found in viewOnceMessage")
-            mediaMessage = innerMsg[innerType]
-            mediaTypeHint = innerType.replace("Message", "") // Update hint for download
-            fileName += `.${mime.extension(mediaMessage.mimetype) || "bin"}`
-            break
-        }
-
-        if (!mediaMessage) return logger.error(`❌ No media content for ${mediaTypeHint}`)
-
-        const mediaData = await this._downloadWhatsAppMediaContent(whatsappMsg)
-        if (!mediaData || !mediaData.buffer) throw new Error("Failed to download media content from WhatsApp.")
-
-        const { buffer, mimetype, filename } = mediaData
-        const filePath = path.join(this.tempDir, filename)
-        await fs.writeFile(filePath, buffer)
-
-        const chatId = this.config.telegram.chatId
-
-        if (isOutgoing) caption = caption ? `📤 You: ${caption}` : "📤 You sent media"
-        else if (sender.endsWith("@g.us") && whatsappMsg.key.participant !== sender) {
-          const senderPhone = whatsappMsg.key.participant.split("@")[0]
-          const senderName = this.contactMappings.get(senderPhone) || senderPhone
-          caption = `👤 ${senderName}:\n${caption || ""}`
-        }
-
-        const opts = { caption, message_thread_id: finalTopicId }
-
-        switch (mediaTypeHint) {
-          case "image":
-            await this.telegramBot.sendPhoto(chatId, filePath, opts)
-            break
-          case "video":
-            mediaMessage.gifPlayback
-              ? await this.telegramBot.sendAnimation(chatId, filePath, opts)
-              : await this.telegramBot.sendVideo(chatId, filePath, opts)
-            break
-          case "ptv": // PTV is handled as video_note in Telegram
-          case "video_note":
-            const notePath = await this.convertToVideoNote(filePath)
-            await this.telegramBot.sendVideoNote(chatId, notePath, { message_thread_id: finalTopicId })
-            if (notePath !== filePath) await fs.unlink(notePath).catch(() => {})
-            break
-          case "audio":
-            if (mediaMessage.ptt) {
-              await this.telegramBot.sendVoice(chatId, filePath, opts)
-            } else {
-              await this.telegramBot.sendAudio(chatId, filePath, {
-                ...opts,
-                title: mediaMessage.title || "Audio",
-              })
-            }
-            break
-          case "document":
-            await this.telegramBot.sendDocument(chatId, filePath, opts)
-            break
-          case "sticker":
-            try {
-              await this.telegramBot.sendSticker(chatId, filePath, { message_thread_id: finalTopicId })
-            } catch {
-              const pngPath = filePath.replace(".webp", ".png")
-              await sharp(filePath).png().toFile(pngPath)
-              await this.telegramBot.sendPhoto(chatId, pngPath, {
-                caption: caption || "Sticker",
-                message_thread_id: finalTopicId,
-              })
-              await fs.unlink(pngPath).catch(() => {})
-            }
-            break
-        }
-
-        await fs.unlink(filePath).catch(() => {})
-        logger.info(`✅ ${mediaTypeHint} sent to topic ${finalTopicId}`)
-      } catch (error) {
-        const desc = error.response?.data?.description || error.message
-        if (desc.includes("message thread not found")) {
-          logger.warn(`🗑️ Topic ${topicId} was deleted. Recreating and retrying...`)
-
-          const sender = whatsappMsg.key.remoteJid
-          this.chatMappings.delete(sender)
-          this.profilePicCache.delete(sender)
-          await this.saveMappingsToDb()
-
-          const newTopicId = await this.getOrCreateTopic(sender, whatsappMsg)
-          if (newTopicId) {
-            await sendMedia(newTopicId)
-          }
-        } else {
-          logger.error(`❌ Failed to send ${mediaTypeHint}:`, desc)
-        }
-      }
-    }
-
-    await sendMedia(topicId)
-  }
-
-  async processVideoNote(inputPath) {
-    return new Promise((resolve, reject) => {
-      const outputPath = inputPath.replace(/\.[^.]+$/, "_note.mp4")
-
-      ffmpeg(inputPath)
-        .size("240x240")
-        .aspect("1:1")
-        .videoCodec("libx264")
-        .audioCodec("aac")
-        .format("mp4")
-        .on("end", () => resolve(outputPath))
-        .on("error", (err) => {
-          logger.error("❌ Video note processing failed:", err)
-          resolve(inputPath)
-        })
-        .save(outputPath)
-    })
-  }
-
-  async convertToVideoNote(inputPath) {
-    return new Promise((resolve, reject) => {
-      const outputPath = inputPath.replace(".mp4", "_note.mp4")
-
-      ffmpeg(inputPath)
-        .videoFilter("scale=240:240:force_original_aspect_ratio=increase,crop=240:240")
-        .duration(60)
-        .format("mp4")
-        .on("end", () => {
-          logger.debug("Video note conversion completed")
-          resolve(outputPath)
-        })
-        .on("error", (err) => {
-          logger.debug("Video note conversion failed:", err)
-          resolve(inputPath)
-        })
-        .save(outputPath)
-    })
-  }
-
-  async convertStickerForTelegram(inputPath) {
-    try {
-      const outputPath = inputPath.replace(/\.[^.]+$/, "_tg.webp")
-
-      await sharp(inputPath)
-        .resize(512, 512, {
-          fit: "contain",
-          background: { r: 0, g: 0, b: 0, alpha: 0 },
-        })
-        .webp()
-        .toFile(outputPath)
-
-      return outputPath
-    } catch (error) {
-      logger.error("❌ Sticker conversion failed:", error)
-      return inputPath
-    }
-  }
-
-  async setReaction(chatId, messageId, emoji) {
-    try {
-      const token = this.config.telegram.botToken
-      await axios.post(`https://api.telegram.org/bot${token}/setMessageReaction`, {
-        chat_id: chatId,
-        message_id: messageId,
-        reaction: [{ type: "emoji", emoji }],
-      })
-    } catch (err) {
-      logger.warn("❌ Failed to set reaction:", err?.response?.data?.description || err.message)
-    }
-  }
-
-  findWhatsAppJidByTopic(topicId) {
-    for (const [jid, topicData] of this.chatMappings.entries()) {
-      // Check if topicData is an object with telegramTopicId or just the topicId directly
-      const currentTopicId = typeof topicData === "object" && topicData !== null ? topicData.telegramTopicId : topicData
-      if (currentTopicId === topicId) {
-        return jid
-      }
-    }
-    return null
-  }
-
-  async syncContacts() {
-    try {
-      if (!this.whatsappClient?.user) {
-        logger.warn("⚠️ WhatsApp not connected, skipping contact sync")
-        return
-      }
-
-      logger.info("📞 Syncing contacts from WhatsApp...")
-
-      const contacts = this.whatsappClient.store?.contacts || {}
-      const contactEntries = Object.entries(contacts)
-
-      logger.debug(`🔍 Found ${contactEntries.length} contacts in WhatsApp store`)
-
-      let syncedCount = 0
-
-      for (const [jid, contact] of contactEntries) {
-        if (!jid || jid === "status@broadcast" || !contact) continue
-
-        const phone = jid.split("@")[0]
-        let contactName = null
-
-        // Extract name from contact - prioritize saved contact name
-        if (contact.name && contact.name !== phone && !contact.name.startsWith("+") && contact.name.length > 2) {
-          contactName = contact.name
-        } else if (
-          contact.notify &&
-          contact.notify !== phone &&
-          !contact.notify.startsWith("+") &&
-          contact.notify.length > 2
-        ) {
-          contactName = contact.notify
-        } else if (contact.verifiedName && contact.verifiedName !== phone && contact.verifiedName.length > 2) {
-          contactName = contact.verifiedName
-        }
-
-        if (contactName) {
-          const existingName = this.contactMappings.get(phone)
-          if (existingName !== contactName) {
-            this.contactMappings.set(phone, contactName)
-            syncedCount++
-            logger.debug(`📞 Synced contact: ${phone} -> ${contactName}`)
-          }
-        }
-      }
-
-      await this.saveMappingsToDb()
-      logger.info(`✅ Synced ${syncedCount} new/updated contacts (Total: ${this.contactMappings.size})`)
-
-      if (syncedCount > 0) {
-        await this.updateTopicNames()
-      }
-    } catch (error) {
-      logger.error("❌ Failed to sync contacts:", error)
-    }
-  }
-
-  async updateTopicNames() {
-    try {
-      const chatId = this.config.telegram.chatId
-      if (!chatId || chatId.includes("YOUR_CHAT_ID")) {
-        logger.error("❌ Invalid telegram.chatId for updating topic names")
-        return
-      }
-
-      logger.info("📝 Updating Telegram topic names...")
-      let updatedCount = 0
-
-      for (const [jid, topicId] of this.chatMappings.entries()) {
-        if (!jid.endsWith("@g.us") && jid !== "status@broadcast" && jid !== "call@broadcast") {
-          const phone = jid.split("@")[0]
-          const contactName = this.contactMappings.get(phone)
-
-          if (contactName) {
-            try {
-              await this.telegramBot.editForumTopic(chatId, topicId, {
-                name: contactName,
-              })
-
-              logger.info(`📝 ✅ Updated topic name for ${phone}: "${contactName}"`)
-              updatedCount++
-            } catch (error) {
-              logger.error(`❌ Failed to update topic ${topicId} for ${phone} to "${contactName}":`, error.message)
-            }
-
-            await new Promise((resolve) => setTimeout(resolve, 200))
-          }
-        }
-      }
-
-      logger.info(`✅ Updated ${updatedCount} topic names`)
-    } catch (error) {
-      logger.error("❌ Failed to update topic names:", error)
-    }
-  }
-
-  async handleWhatsAppLocation(whatsappMsg, topicId) {
-    const sendLocation = async (finalTopicId) => {
-      try {
-        const chatId = this.config.telegram.chatId
-        const locationMsg = whatsappMsg.message.locationMessage
-
-        const participant = whatsappMsg.key.participant || whatsappMsg.key.remoteJid
-        const phone = participant.split("@")[0]
-        const senderName = this.contactMappings.get(phone) || `+${phone}`
-        const isGroup = whatsappMsg.key.remoteJid.endsWith("@g.us")
-
-        let caption = "📍 Location"
-        if (isGroup && participant !== whatsappMsg.key.remoteJid) {
-          caption = `👤 ${senderName} shared a location`
-        }
-
-        await this.telegramBot.sendLocation(chatId, locationMsg.degreesLatitude, locationMsg.degreesLongitude, {
-          message_thread_id: finalTopicId,
-        })
-
-        if (locationMsg.name || locationMsg.address) {
-          let locationInfo = caption
-          if (locationMsg.name) locationInfo += `\n🏷️ ${locationMsg.name}`
-          if (locationMsg.address) locationInfo += `\n📍 ${locationMsg.address}`
-
-          await this.telegramBot.sendMessage(chatId, locationInfo, {
-            message_thread_id: finalTopicId,
-          })
-        }
-      } catch (error) {
-        const desc = error.response?.data?.description || error.message
-        if (desc.includes("message thread not found")) {
-          logger.warn(`🗑️ Location topic deleted. Recreating...`)
-          const sender = whatsappMsg.key.remoteJid
-          this.chatMappings.delete(sender)
-          this.profilePicCache.delete(sender)
-          await this.saveMappingsToDb()
-          const newTopicId = await this.getOrCreateTopic(sender, whatsappMsg)
-          if (newTopicId) {
-            await sendLocation(newTopicId)
-          }
-        } else {
-          logger.error("❌ Failed to handle location:", desc)
-        }
-      }
-    }
-    await sendLocation(topicId)
-  }
-
-  async handleWhatsAppContact(whatsappMsg, topicId) {
     const sendContact = async (finalTopicId) => {
       try {
         const chatId = this.config.telegram.chatId
-        const contactMsg = whatsappMsg.message.contactMessage
+        const contactMsg = msg.contact
 
-        const participant = whatsappMsg.key.participant || whatsappMsg.key.remoteJid
+        const participant = whatsappJid
         const phone = participant.split("@")[0]
         const senderName = this.contactMappings.get(phone) || `+${phone}`
-        const isGroup = whatsappMsg.key.remoteJid.endsWith("@g.us")
-
-        let caption = `👤 Contact: ${contactMsg.displayName}`
-        if (isGroup && participant !== whatsappMsg.key.remoteJid) {
-          caption = `👤 ${senderName} shared a contact:\n${contactMsg.displayName}`
-        }
+        const isGroup = whatsappJid.endsWith("@g.us")
 
         let phoneNumber = ""
-        if (contactMsg.vcard) {
-          const phoneMatch = contactMsg.vcard.match(/TEL[^:]*:([^\n\r]+)/i)
-          if (phoneMatch) {
-            phoneNumber = phoneMatch[1].trim()
+        if (contactMsg.phone_number) {
+          phoneNumber = contactMsg.phone_number
+        }
+
+        // Send as Telegram contact if phone number is available
+        if (phoneNumber) {
+          try {
+            await this.telegramBot.sendContact(chatId, phoneNumber, contactMsg.first_name || "Contact", {
+              message_thread_id: finalTopicId,
+            })
+
+            // Add sender info for group messages
+            if (isGroup && participant !== whatsappJid) {
+              await this.telegramBot.sendMessage(chatId, `👤 ${senderName} shared this contact`, {
+                message_thread_id: finalTopicId,
+              })
+            }
+            return
+          } catch (error) {
+            logger.warn("Failed to send as Telegram contact, falling back to text:", error.message)
           }
         }
 
+        // Fallback to text message
+        let caption = `👤 Contact: ${msg.contact.first_name || "Contact"}`
+        if (isGroup && participant !== whatsappJid) {
+          caption = `👤 ${senderName} shared a contact:\n${msg.contact.first_name || "Contact"}`
+        }
+
         if (phoneNumber) {
-          caption += `\n📱 ${phoneNumber}`
+          caption += `\n📱 +${phoneNumber}`
         }
 
         await this.telegramBot.sendMessage(chatId, caption, {
@@ -1384,11 +905,11 @@ END:VCARD`
         const desc = error.response?.data?.description || error.message
         if (desc.includes("message thread not found")) {
           logger.warn(`🗑️ Contact topic deleted. Recreating...`)
-          const sender = whatsappMsg.key.remoteJid
+          const sender = whatsappJid
           this.chatMappings.delete(sender)
           this.profilePicCache.delete(sender)
           await this.saveMappingsToDb()
-          const newTopicId = await this.getOrCreateTopic(sender, whatsappMsg)
+          const newTopicId = await this.getOrCreateTopic(sender, { key: { remoteJid: sender } })
           if (newTopicId) {
             await sendContact(newTopicId)
           }
