@@ -1258,7 +1258,7 @@ class TelegramBridge {
           if (existingName !== contactName) {
             this.contactMappings.set(phone, contactName)
             syncedCount++
-            logger.debug(`Synced contact: ${phone} -> ${contact.name}`)
+            logger.debug(`Synced contact: ${phone} -> ${contactName}`)
           }
         }
       }
