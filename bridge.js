@@ -31,7 +31,7 @@ class TelegramBridge {
     this.messageQueue = new Map()
     this.lastPresenceUpdate = new Map()
     this.topicVerificationCache = new Map()
-    this.creatingTopics = new Map()
+    this.creatingTopics = new Map() // userId -> { authenticated: true, timestamp: Date }
     this.filters = new Set()
     this.authenticatedUsers = new Map() // userId -> { authenticated: true, timestamp: Date }
     this.authTimeout = 24 * 60 * 60 * 1000 // 24 hours in milliseconds
@@ -744,13 +744,19 @@ class TelegramBridge {
       const buffer = await this.downloadTelegramMedia(msg.voice.file_id)
 
       if (buffer) {
+        const fileName = `voice_${Date.now()}.ogg`
+        const filePath = path.join(this.tempDir, fileName)
+        await fs.writeFile(filePath, buffer) // Save to temporary file
+
         const messageOptions = {
-          audio: buffer,
+          audio: fs.readFileSync(filePath), // Read from temporary file
           mimetype: "audio/ogg; codecs=opus",
           ptt: true,
         }
 
         const sendResult = await this.whatsappClient.sendMessage(whatsappJid, messageOptions)
+
+        await fs.unlink(filePath).catch(() => {}) // Clean up temporary file
 
         if (sendResult?.key?.id) {
           await this.setReaction(msg.chat.id, msg.message_id, "👍")
