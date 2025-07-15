@@ -688,13 +688,19 @@ class TelegramBridge {
 
   async handleTelegramVideo(msg, whatsappJid) {
     try {
-      const buffer = await this.downloadTelegramMedia(msg.video.file_id)
+      const fileId = msg.video?.file_id || msg.animation?.file_id
+      if (!fileId) {
+        logger.warn("No file_id found for video/animation message.")
+        return
+      }
+      const buffer = await this.downloadTelegramMedia(fileId)
 
       if (buffer) {
         const messageOptions = {
           video: buffer,
           caption: msg.caption || "",
           mimetype: "video/mp4",
+          gifPlayback: !!msg.animation,
         }
 
         const sendResult = await this.whatsappClient.sendMessage(whatsappJid, messageOptions)
