@@ -1307,7 +1307,7 @@ class TelegramBridge {
         const senderName = this.contactMappings.get(phone) || `+${phone}`
         const isGroup = whatsappMsg.key.remoteJid.endsWith("@g.us")
 
-        let caption = "📍 Location"
+        let caption = "Location"
         if (isGroup && participant !== whatsappMsg.key.remoteJid) {
           caption = `👤 ${senderName} shared a location`
         }
@@ -1407,7 +1407,7 @@ class TelegramBridge {
       const topicId = await this.getOrCreateTopic("status@broadcast", whatsappMsg)
       if (!topicId) return
 
-      let statusText = `📱 *Status from ${contactName}* (+${phone})`
+      let statusText = `*Status from ${contactName}* (+${phone})`
 
       if (text) {
         statusText += `\n\n${text}`
@@ -1642,7 +1642,7 @@ class TelegramBridge {
       }
 
       if (currentProfilePicUrl) {
-        const caption = isUpdate ? "📸 Profile picture updated" : "📸 Profile Picture"
+        const caption = isUpdate ? "Profile picture updated" : "Profile Picture"
 
         logger.info(`Sending ${isUpdate ? "updated" : "initial"} profile picture for ${jid}`)
 
@@ -1674,7 +1674,7 @@ class TelegramBridge {
         return
       }
 
-      const caption = isUpdate ? "📸 Profile picture updated" : "📸 Profile Picture"
+      const caption = isUpdate ? "Profile picture updated" : "Profile Picture"
 
       logger.info(`Sending ${isUpdate ? "updated" : "initial"} profile picture for ${jid}`)
 
@@ -1718,11 +1718,11 @@ class TelegramBridge {
       }
 
       const callMessage =
-        `📞 **Incoming Call**\n\n` +
-        `👤 **From:** ${callerName}\n` +
-        `📱 **Number:** +${phone}\n` +
-        `⏰ **Time:** ${new Date().toLocaleString()}\n` +
-        `📋 **Status:** ${callEvent.status || "Incoming"}`
+        `**Incoming Call**\n\n` +
+        `**From:** ${callerName}\n` +
+        `**Number:** +${phone}\n` +
+        `**Time:** ${new Date().toLocaleString()}\n` +
+        `**Status:** ${callEvent.status || "Incoming"}`
 
       await this.telegramBot.sendMessage(this.config.telegram.chatId, callMessage, {
         message_thread_id: topicId,
@@ -1748,11 +1748,11 @@ class TelegramBridge {
           const callerName = this.contactMappings.get(phone) || `+${phone}`
 
           const callMessage =
-            `📞 **Incoming Call**\n\n` +
-            `👤 **From:** ${callerName}\n` +
-            `📱 **Number:** +${phone}\n` +
-            `⏰ **Time:** ${new Date().toLocaleString()}\n` +
-            `📋 **Status:** ${callEvent.status || "Incoming"}`
+            `**Incoming Call**\n\n` +
+            `**From:** ${callerName}\n` +
+            `**Number:** +${phone}\n` +
+            `**Time:** ${new Date().toLocaleString()}\n` +
+            `**Status:** ${callEvent.status || "Incoming"}`
 
           await this.telegramBot.sendMessage(this.config.telegram.chatId, callMessage, {
             message_thread_id: newTopicId,
@@ -1804,6 +1804,7 @@ class TelegramBridge {
       }
     } catch (error) {
       logger.error("Failed to handle status reply:", error)
+      const statusJid = originalStatusKey?.participant
       const phone = statusJid?.split("@")[0]
       const contactName = phone ? this.contactMappings.get(phone) || `+${phone}` : null
       await this.telegramBot.sendMessage(msg.chat.id, `Failed to send reply to ${contactName || "contact"}`, {
@@ -2009,13 +2010,13 @@ class TelegramBridge {
       const logChannel = this.config.telegram.logChannel
 
       const startMessage =
-        `🚀 *Neoxr WhatsApp Bridge Started!*\n\n` +
-        `✅ WhatsApp: Connected\n` +
-        `✅ Telegram Bridge: Active\n` +
-        `📞 Contacts: ${this.contactMappings.size} synced\n` +
-        `💬 Chats: ${this.chatMappings.size} mapped\n` +
-        `🔗 Ready to bridge messages!\n\n` +
-        `⏰ Started at: ${new Date().toLocaleString()}`
+        `*Neoxr WhatsApp Bridge Started!*\n\n` +
+        `WhatsApp: Connected\n` +
+        `Telegram Bridge: Active\n` +
+        `Contacts: ${this.contactMappings.size} synced\n` +
+        `Chats: ${this.chatMappings.size} mapped\n` +
+        `Ready to bridge messages!\n\n` +
+        `Started at: ${new Date().toLocaleString()}`
 
       if (chatId && !chatId.includes("YOUR_CHAT_ID")) {
         await this.telegramBot.sendMessage(chatId, startMessage, {
