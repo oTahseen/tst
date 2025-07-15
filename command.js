@@ -62,7 +62,7 @@ class TelegramCommands {
       }
     } catch (error) {
       logger.error(`Error handling command ${command}:`, error)
-      await this.bridge.telegramBot.sendMessage(msg.chat.id, `❌ Command error: ${error.message}`, {
+      await this.bridge.telegramBot.sendMessage(msg.chat.id, `Command error: ${error.message}`, {
         parse_mode: "Markdown",
       })
     }
@@ -70,8 +70,8 @@ class TelegramCommands {
 
   async handleStart(chatId) {
     const statusText =
-      `🤖 *Neoxr WhatsApp-Telegram Bridge*\n\n` +
-      `Status: ${this.bridge.telegramBot ? "✅ Ready" : "⏳ Initializing..."}\n` +
+      `*Neoxr WhatsApp-Telegram Bridge*\n\n` +
+      `Status: ${this.bridge.telegramBot ? "Ready" : "Initializing..."}\n` +
       `Linked Chats: ${this.bridge.chatMappings?.size || 0}\n` +
       `Contacts: ${this.bridge.contactMappings?.size || 0}\n` +
       `Users: ${this.bridge.userMappings?.size || 0}`
@@ -83,12 +83,12 @@ class TelegramCommands {
     const userName = whatsapp?.user?.name || "Unknown"
 
     const status =
-      `📊 *Bridge Status*\n\n` +
-      `🔗 WhatsApp: ${whatsapp ? "✅ Connected" : "❌ Disconnected"}\n` +
-      `👤 User: ${userName}\n` +
-      `💬 Chats: ${this.bridge.chatMappings?.size || 0}\n` +
-      `👥 Users: ${this.bridge.userMappings?.size || 0}\n` +
-      `📞 Contacts: ${this.bridge.contactMappings?.size || 0}`
+      `*Bridge Status*\n\n` +
+      `WhatsApp: ${whatsapp ? "Connected" : "Disconnected"}\n` +
+      `User: ${userName}\n` +
+      `Chats: ${this.bridge.chatMappings?.size || 0}\n` +
+      `Users: ${this.bridge.userMappings?.size || 0}\n` +
+      `Contacts: ${this.bridge.contactMappings?.size || 0}`
     await this.bridge.telegramBot.sendMessage(chatId, status, { parse_mode: "Markdown" })
   }
 
@@ -96,7 +96,7 @@ class TelegramCommands {
     if (args.length < 2) {
       return this.bridge.telegramBot.sendMessage(
         chatId,
-        "❌ Usage: /send <number> <message>\nExample: /send 1234567890 Hello!",
+        "Usage: /send <number> <message>\nExample: /send 1234567890 Hello!",
         { parse_mode: "Markdown" },
       )
     }
@@ -105,33 +105,33 @@ class TelegramCommands {
     const message = args.slice(1).join(" ")
 
     if (!/^\d{6,15}$/.test(number)) {
-      return this.bridge.telegramBot.sendMessage(chatId, "❌ Invalid phone number format.", { parse_mode: "Markdown" })
+      return this.bridge.telegramBot.sendMessage(chatId, "Invalid phone number format.", { parse_mode: "Markdown" })
     }
 
     const jid = number.includes("@") ? number : `${number}@s.whatsapp.net`
 
     try {
       const result = await this.bridge.whatsappClient.sendMessage(jid, { text: message })
-      const response = result?.key?.id ? `✅ Message sent to ${number}` : `⚠️ Message sent, but no confirmation`
+      const response = result?.key?.id ? `Message sent to ${number}` : `Message sent, but no confirmation`
       await this.bridge.telegramBot.sendMessage(chatId, response, { parse_mode: "Markdown" })
     } catch (error) {
       logger.error(`Error sending message to ${number}:`, error)
-      await this.bridge.telegramBot.sendMessage(chatId, `❌ Error: ${error.message}`, { parse_mode: "Markdown" })
+      await this.bridge.telegramBot.sendMessage(chatId, `Error: ${error.message}`, { parse_mode: "Markdown" })
     }
   }
 
   async handleSync(chatId) {
-    await this.bridge.telegramBot.sendMessage(chatId, "🔄 Syncing contacts...", { parse_mode: "Markdown" })
+    await this.bridge.telegramBot.sendMessage(chatId, "Syncing contacts...", { parse_mode: "Markdown" })
     try {
       await this.bridge.syncContacts()
       await this.bridge.saveMappingsToDb?.()
       await this.bridge.telegramBot.sendMessage(
         chatId,
-        `✅ Synced ${this.bridge.contactMappings.size} contacts from WhatsApp`,
+        `Synced ${this.bridge.contactMappings.size} contacts from WhatsApp`,
         { parse_mode: "Markdown" },
       )
     } catch (error) {
-      await this.bridge.telegramBot.sendMessage(chatId, `❌ Failed to sync: ${error.message}`, {
+      await this.bridge.telegramBot.sendMessage(chatId, `Failed to sync: ${error.message}`, {
         parse_mode: "Markdown",
       })
     }
@@ -141,7 +141,7 @@ class TelegramCommands {
     if (args.length === 0) {
       return this.bridge.telegramBot.sendMessage(
         chatId,
-        "❌ Usage: /searchcontact <name or phone>\nExample: /searchcontact John",
+        "Usage: /searchcontact <name or phone>\nExample: /searchcontact John",
         { parse_mode: "Markdown" },
       )
     }
@@ -151,42 +151,42 @@ class TelegramCommands {
     const matches = contacts.filter(([phone, name]) => phone.includes(query) || name?.toLowerCase().includes(query))
 
     if (matches.length === 0) {
-      return this.bridge.telegramBot.sendMessage(chatId, `❌ No contacts found for "${query}"`, {
+      return this.bridge.telegramBot.sendMessage(chatId, `No contacts found for "${query}"`, {
         parse_mode: "Markdown",
       })
     }
 
     const result = matches.map(([phone, name]) => `📱 ${name || "Unknown"} (+${phone})`).join("\n")
-    await this.bridge.telegramBot.sendMessage(chatId, `🔍 *Search Results*\n\n${result}`, { parse_mode: "Markdown" })
+    await this.bridge.telegramBot.sendMessage(chatId, `*Search Results*\n\n${result}`, { parse_mode: "Markdown" })
   }
 
   async handleAddFilter(chatId, args) {
     if (args.length === 0) {
-      return this.bridge.telegramBot.sendMessage(chatId, "❌ Usage: /addfilter <word>", { parse_mode: "Markdown" })
+      return this.bridge.telegramBot.sendMessage(chatId, "Usage: /addfilter <word>", { parse_mode: "Markdown" })
     }
 
     const word = args.join(" ").toLowerCase()
     await this.bridge.addFilter(word)
-    await this.bridge.telegramBot.sendMessage(chatId, `✅ Added filter: \`${word}\``, { parse_mode: "Markdown" })
+    await this.bridge.telegramBot.sendMessage(chatId, `Added filter: \`${word}\``, { parse_mode: "Markdown" })
   }
 
   async handleListFilters(chatId) {
     if (!this.bridge.filters?.size) {
-      return this.bridge.telegramBot.sendMessage(chatId, "⚠️ No filters set.", { parse_mode: "Markdown" })
+      return this.bridge.telegramBot.sendMessage(chatId, "No filters set.", { parse_mode: "Markdown" })
     }
 
     const list = [...this.bridge.filters].map((w) => `- \`${w}\``).join("\n")
-    await this.bridge.telegramBot.sendMessage(chatId, `🛑 *Current Filters:*\n\n${list}`, { parse_mode: "Markdown" })
+    await this.bridge.telegramBot.sendMessage(chatId, `*Current Filters:*\n\n${list}`, { parse_mode: "Markdown" })
   }
 
   async handleClearFilters(chatId) {
     await this.bridge.clearFilters()
-    await this.bridge.telegramBot.sendMessage(chatId, "🧹 All filters cleared.", { parse_mode: "Markdown" })
+    await this.bridge.telegramBot.sendMessage(chatId, "All filters cleared.", { parse_mode: "Markdown" })
   }
 
   async handlePassword(chatId, args) {
     if (args.length === 0) {
-      return this.bridge.telegramBot.sendMessage(chatId, "❌ Usage: /password <your_password>", {
+      return this.bridge.telegramBot.sendMessage(chatId, "Usage: /password <your_password>", {
         parse_mode: "Markdown",
       })
     }
@@ -197,11 +197,11 @@ class TelegramCommands {
     if (this.bridge.authenticateUser(userId, password)) {
       await this.bridge.telegramBot.sendMessage(
         chatId,
-        "✅ Authentication successful! You can now use bot commands and reply to messages.",
+        "Authentication successful! You can now use bot commands and reply to messages.",
         { parse_mode: "Markdown" },
       )
     } else {
-      await this.bridge.telegramBot.sendMessage(chatId, "❌ Invalid password. Access denied.", {
+      await this.bridge.telegramBot.sendMessage(chatId, "Invalid password. Access denied.", {
         parse_mode: "Markdown",
       })
     }
@@ -210,7 +210,7 @@ class TelegramCommands {
   async handleContacts(chatId) {
     const contacts = [...this.bridge.contactMappings.entries()]
     if (contacts.length === 0) {
-      return this.bridge.telegramBot.sendMessage(chatId, "⚠️ No contacts found.", { parse_mode: "Markdown" })
+      return this.bridge.telegramBot.sendMessage(chatId, "No contacts found.", { parse_mode: "Markdown" })
     }
 
     const contactList = contacts
@@ -218,13 +218,13 @@ class TelegramCommands {
       .map(([phone, name]) => `📱 ${name || "Unknown"} (+${phone})`)
       .join("\n")
 
-    const message = `📞 *Contacts (${contacts.length} total, showing first 20):*\n\n${contactList}`
+    const message = `*Contacts (${contacts.length} total, showing first 20):*\n\n${contactList}`
     await this.bridge.telegramBot.sendMessage(chatId, message, { parse_mode: "Markdown" })
   }
 
   async handleMenu(chatId) {
     const message =
-      `ℹ️ *Available Commands*\n\n` +
+      `*Available Commands*\n\n` +
       `/password <pass> - Authenticate to use bot\n` +
       `/start - Show bot info\n` +
       `/status - Show bridge status\n` +
