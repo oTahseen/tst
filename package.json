@@ -1,47 +1,54 @@
 {
-   "name": "neoxr-bot",
-   "version": "4.0",
-   "description": "WhatsApp Bot (Base)",
-   "main": "index.js",
-   "engines": {
-      "node": ">= 20.x"
-   },
-   "scripts": {
-      "start": "node ."
-   },
-   "repository": {
-      "type": "git",
-      "url": "git+https://github.com/neoxr/neoxr-bot.git"
-   },
-   "keywords": [
-      "wb",
-      "bot"
-   ],
-   "author": "Wildan Izzudin",
-   "license": "ISC",
-   "bugs": {
-      "url": "https://github.com/neoxr/neoxr-bot/issues"
-   },
-   "homepage": "https://github.com/neoxr/neoxr-bot#readme",
-   "dependencies": {
-      "@adiwajshing/baileys": "npm:@neoxr/baileys@8.2.10",
-      "@adiwajshing/keyed-db": "^0.2.4",
-      "@colors/colors": "^1.6.0",
-      "@database/mongo": "github:neoxr/database#mongo",
-      "@database/postgres": "github:neoxr/database#postgresql",
-      "@neoxr/wb": "^5.10.12",
-      "@session/mongo": "github:neoxr/session#mongo",
-      "@session/postgres": "github:neoxr/session#postgresql",
-      "cfonts": "3.1.1",
-      "html-entities": "^2.5.2",
-      "node-cron": "^3.0.0",
-      "node-gtts": "^2.0.2",
-      "qrcode": "1.5.0",
-      "speedtest-net": "1.6.2",
-      "streamifier": "^0.1.1",
-      "translate-google-api": "1.0.4"
-   },
-   "devDependencies": {
-      "css-select": "5.1.0"
-   }
+  "name": "neoxr-bot",
+  "version": "4.0",
+  "description": "WhatsApp Bot (Base)",
+  "main": "index.js",
+  "engines": {
+    "node": ">= 20.x"
+  },
+  "scripts": {
+    "start": "node ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/neoxr/neoxr-bot.git"
+  },
+  "keywords": ["wb", "bot"],
+  "author": "Wildan Izzudin",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/neoxr/neoxr-bot/issues"
+  },
+  "homepage": "https://github.com/neoxr/neoxr-bot#readme",
+  "dependencies": {
+    "@adiwajshing/baileys": "npm:@neoxr/baileys@8.2.9",
+    "@adiwajshing/keyed-db": "^0.2.4",
+    "@colors/colors": "^1.6.0",
+    "@database/mongo": "github:neoxr/database#mongo",
+    "@database/postgres": "github:neoxr/database#postgresql",
+    "@database/local": "github:neoxr/database#local",
+    "@neoxr/wb": "^5.10.9",
+    "@session/mongo": "github:neoxr/session#mongo",
+    "@session/postgres": "github:neoxr/session#postgresql",
+    "cfonts": "3.1.1",
+    "html-entities": "^2.5.2",
+    "node-cron": "^3.0.0",
+    "node-gtts": "^2.0.2",
+    "qrcode": "1.5.0",
+    "speedtest-net": "1.6.2",
+    "streamifier": "^0.1.1",
+    "translate-google-api": "1.0.4",
+    "axios": "^1.6.0",
+    "form-data": "^4.0.0",
+    "node-telegram-bot-api": "^0.64.0",
+    "sharp": "0.30.7",
+    "fluent-ffmpeg": "^2.1.2",
+    "wa-sticker-formatter": "^4.4.4",
+    "mime-types": "^2.1.35",
+    "@cacheable/node-cache": "^1.0.0",
+    "bytes": "^3.1.2"
+  },
+  "devDependencies": {
+    "css-select": "5.1.0"
+  }
 }
