@@ -6,8 +6,7 @@ const path = require("path")
 const axios = require("axios")
 const sharp = require("sharp")
 const mime = require("mime-types")
-const ffmpegPath = require("@ffmpeg-installer/ffmpeg").path
-const { spawn } = require("child_process")
+const ffmpeg = require("fluent-ffmpeg")
 const { Sticker, StickerTypes } = require("wa-sticker-formatter")
 const qrcode = require("qrcode")
 const { downloadContentFromMessage } = require("@adiwajshing/baileys")
@@ -16,7 +15,7 @@ const FormData = require("form-data")
 class TelegramBridge {
   constructor(whatsappClient, database) {
     this.whatsappClient = whatsappClient
-    this.database = this.database
+    this.database = database
     this.telegramBot = null
     this.commands = null
     this.chatMappings = new Map()
@@ -756,22 +755,15 @@ class TelegramBridge {
         const filePath = path.join(this.tempDir, fileName)
         await fs.writeFile(filePath, buffer)
 
-        // Convert to proper format for WhatsApp if needed
-        const convertedPath = await this.convertAudioFormat(filePath, "ogg")
-
         const messageOptions = {
-          audio: await fs.readFile(convertedPath),
+          audio: await fs.readFile(filePath),
           mimetype: "audio/ogg; codecs=opus",
           ptt: true,
         }
 
         const sendResult = await this.whatsappClient.sendMessage(whatsappJid, messageOptions)
 
-        // Cleanup files
         await fs.unlink(filePath).catch(() => {})
-        if (convertedPath !== filePath) {
-          await fs.unlink(convertedPath).catch(() => {})
-        }
 
         if (sendResult?.key?.id) {
           await this.setReaction(msg.chat.id, msg.message_id, "👍")
@@ -1149,54 +1141,18 @@ class TelegramBridge {
     return new Promise((resolve, reject) => {
       const outputPath = inputPath.replace(/\.[^.]+$/, "_note.mp4")
 
-      const ffmpegArgs = [
-        "-i",
-        inputPath,
-        "-vf",
-        "scale=240:240:force_original_aspect_ratio=increase,crop=240:240",
-        "-c:v",
-        "libx264",
-        "-c:a",
-        "aac",
-        "-f",
-        "mp4",
-        "-y", // Overwrite output file
-        outputPath,
-      ]
-
-      const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs, {
-        stdio: ["pipe", "pipe", "pipe"],
-      })
-
-      let stderr = ""
-
-      ffmpegProcess.stderr.on("data", (data) => {
-        stderr += data.toString()
-      })
-
-      ffmpegProcess.on("close", (code) => {
-        if (code === 0) {
-          logger.debug("Video note processing completed")
-          resolve(outputPath)
-        } else {
-          logger.error("Video note processing failed:", stderr)
-          resolve(inputPath) // Fallback to original file
-        }
-      })
-
-      ffmpegProcess.on("error", (err) => {
-        logger.error("FFmpeg process error:", err)
-        resolve(inputPath) // Fallback to original file
-      })
-
-      // Set timeout to prevent hanging
-      setTimeout(() => {
-        if (!ffmpegProcess.killed) {
-          ffmpegProcess.kill("SIGTERM")
-          logger.warn("FFmpeg process timed out, using original file")
+      ffmpeg(inputPath)
+        .size("240x240")
+        .aspect("1:1")
+        .videoCodec("libx264")
+        .audioCodec("aac")
+        .format("mp4")
+        .on("end", () => resolve(outputPath))
+        .on("error", (err) => {
+          logger.error("Video note processing failed:", err)
           resolve(inputPath)
-        }
-      }, 30000) // 30 second timeout
+        })
+        .save(outputPath)
     })
   }
 
@@ -1204,159 +1160,19 @@ class TelegramBridge {
     return new Promise((resolve, reject) => {
       const outputPath = inputPath.replace(".mp4", "_note.mp4")
 
-      const ffmpegArgs = [
-        "-i",
-        inputPath,
-        "-vf",
-        "scale=240:240:force_original_aspect_ratio=increase,crop=240:240",
-        "-t",
-        "60", // Limit duration to 60 seconds
-        "-c:v",
-        "libx264",
-        "-c:a",
-        "aac",
-        "-f",
-        "mp4",
-        "-y", // Overwrite output file
-        outputPath,
-      ]
-
-      const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs, {
-        stdio: ["pipe", "pipe", "pipe"],
-      })
-
-      let stderr = ""
-
-      ffmpegProcess.stderr.on("data", (data) => {
-        stderr += data.toString()
-      })
-
-      ffmpegProcess.on("close", (code) => {
-        if (code === 0) {
+      ffmpeg(inputPath)
+        .videoFilter("scale=240:240:force_original_aspect_ratio=increase,crop=240:240")
+        .duration(60)
+        .format("mp4")
+        .on("end", () => {
           logger.debug("Video note conversion completed")
           resolve(outputPath)
-        } else {
-          logger.debug("Video note conversion failed:", stderr)
-          resolve(inputPath) // Fallback to original file
-        }
-      })
-
-      ffmpegProcess.on("error", (err) => {
-        logger.debug("FFmpeg process error:", err)
-        resolve(inputPath) // Fallback to original file
-      })
-
-      // Set timeout to prevent hanging
-      setTimeout(() => {
-        if (!ffmpegProcess.killed) {
-          ffmpegProcess.kill("SIGTERM")
-          logger.warn("FFmpeg conversion timed out, using original file")
+        })
+        .on("error", (err) => {
+          logger.debug("Video note conversion failed:", err)
           resolve(inputPath)
-        }
-      }, 45000) // 45 second timeout
-    })
-  }
-
-  async convertAudioFormat(inputPath, outputFormat = "ogg") {
-    return new Promise((resolve, reject) => {
-      const outputPath = inputPath.replace(/\.[^.]+$/, `.${outputFormat}`)
-
-      const ffmpegArgs = [
-        "-i",
-        inputPath,
-        "-c:a",
-        outputFormat === "ogg" ? "libopus" : "aac",
-        "-f",
-        outputFormat,
-        "-y", // Overwrite output file
-        outputPath,
-      ]
-
-      const ffmpegProcess = spawn(ffmpegPath, ffmpegArgs, {
-        stdio: ["pipe", "pipe", "pipe"],
-      })
-
-      let stderr = ""
-
-      ffmpegProcess.stderr.on("data", (data) => {
-        stderr += data.toString()
-      })
-
-      ffmpegProcess.on("close", (code) => {
-        if (code === 0) {
-          logger.debug(`Audio conversion to ${outputFormat} completed`)
-          resolve(outputPath)
-        } else {
-          logger.error(`Audio conversion to ${outputFormat} failed:`, stderr)
-          resolve(inputPath) // Fallback to original file
-        }
-      })
-
-      ffmpegProcess.on("error", (err) => {
-        logger.error("FFmpeg audio conversion error:", err)
-        resolve(inputPath) // Fallback to original file
-      })
-
-      // Set timeout to prevent hanging
-      setTimeout(() => {
-        if (!ffmpegProcess.killed) {
-          ffmpegProcess.kill("SIGTERM")
-          logger.warn("FFmpeg audio conversion timed out, using original file")
-          resolve(inputPath)
-        }
-      }, 30000) // 30 second timeout
-    })
-  }
-
-  async getMediaInfo(filePath) {
-    return new Promise((resolve, reject) => {
-      const ffprobeArgs = ["-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", filePath]
-
-      // Use ffprobe (comes with ffmpeg)
-      const ffprobePath = ffmpegPath.replace("ffmpeg", "ffprobe")
-      const ffprobeProcess = spawn(ffprobePath, ffprobeArgs, {
-        stdio: ["pipe", "pipe", "pipe"],
-      })
-
-      let stdout = ""
-      let stderr = ""
-
-      ffprobeProcess.stdout.on("data", (data) => {
-        stdout += data.toString()
-      })
-
-      ffprobeProcess.stderr.on("data", (data) => {
-        stderr += data.toString()
-      })
-
-      ffprobeProcess.on("close", (code) => {
-        if (code === 0) {
-          try {
-            const info = JSON.parse(stdout)
-            resolve(info)
-          } catch (err) {
-            logger.error("Failed to parse ffprobe output:", err)
-            resolve(null)
-          }
-        } else {
-          logger.error("ffprobe failed:", stderr)
-          resolve(null)
-        }
-      })
-
-      ffprobeProcess.on("error", (err) => {
-        logger.error("ffprobe process error:", err)
-        resolve(null)
-      })
-
-      // Set timeout
-      setTimeout(() => {
-        if (!ffprobeProcess.killed) {
-          ffprobeProcess.kill("SIGTERM")
-          logger.warn("ffprobe timed out")
-          resolve(null)
-        }
-      }, 10000) // 10 second timeout
+        })
+        .save(outputPath)
     })
   }
 
