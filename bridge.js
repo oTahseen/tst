@@ -283,6 +283,7 @@ class TelegramBridge {
       }),
     )
 
+    // Add callback_query handler for pagination buttons
     this.telegramBot.on(
       "callback_query",
       this.wrapHandler(async (callbackQuery) => {
@@ -1457,7 +1458,7 @@ class TelegramBridge {
     } catch (error) {
       const desc = error.response?.data?.description || error.message
       if (desc.includes("message thread not found")) {
-        logger.warn("Status topic deleted. Recreating and retrying...")
+        logger.warn("Status topic deleted. Recreating...")
 
         this.chatMappings.delete("status@broadcast")
         this.profilePicCache.delete("status@broadcast")
