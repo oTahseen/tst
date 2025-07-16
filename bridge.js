@@ -360,7 +360,7 @@ class TelegramBridge {
       if (sender.endsWith("@g.us") && participant !== sender) {
         const senderPhone = participant.split("@")[0]
         const senderName = this.contactMappings.get(senderPhone) || senderPhone
-        messageText = `ðŸ‘¤ ${senderName}:\n${text}`
+        messageText = `👤 ${senderName}:\n${text}`
       }
 
       await this.sendSimpleMessage(topicId, messageText, sender)
@@ -397,10 +397,10 @@ class TelegramBridge {
           iconColor = 0x7aba3c
 
         if (isStatus) {
-          topicName = `ðŸ“Š Status Updates`
+          topicName = `📊 Status Updates`
           iconColor = 0xff6b35
         } else if (isCall) {
-          topicName = `ðŸ“ž Call Logs`
+          topicName = `📞 Call Logs`
           iconColor = 0xff4757
         } else if (isGroup) {
           try {
@@ -464,14 +464,14 @@ class TelegramBridge {
         try {
           const groupMeta = await this.whatsappClient.groupMetadata(jid)
           welcomeText =
-            `ðŸ·ï¸ **Group Information**\n\n` +
-            `ðŸ“ **Name:** ${groupMeta.subject}\n` +
-            `ðŸ‘¥ **Participants:** ${groupMeta.participants.length}\n` +
-            `ðŸ†” **Group ID:** \`${jid}\`\n` +
-            `ðŸ“… **Created:** ${new Date(groupMeta.creation * 1000).toLocaleDateString()}\n\n` +
-            `ðŸ’¬ Messages from this group will appear here`
+            `🏷️ **Group Information**\n\n` +
+            `📝 **Name:** ${groupMeta.subject}\n` +
+            `👥 **Participants:** ${groupMeta.participants.length}\n` +
+            `🆔 **Group ID:** \`${jid}\`\n` +
+            `📅 **Created:** ${new Date(groupMeta.creation * 1000).toLocaleDateString()}\n\n` +
+            `💬 Messages from this group will appear here`
         } catch (error) {
-          welcomeText = `ðŸ·ï¸ **Group Chat**\n\nðŸ’¬ Messages from this group will appear here`
+          welcomeText = `🏷️ **Group Chat**\n\n💬 Messages from this group will appear here`
           logger.warn(`Could not fetch group metadata for ${jid}:`, error)
         }
       } else {
@@ -479,21 +479,21 @@ class TelegramBridge {
         try {
           const status = await this.whatsappClient.fetchStatus(jid)
           if (status?.status) {
-            userStatus = `ðŸ“ **Status:** ${status.status}\n`
+            userStatus = `📝 **Status:** ${status.status}\n`
           }
         } catch (error) {
           logger.debug(`Could not fetch status for ${jid}:`, error)
         }
 
         welcomeText =
-          `ðŸ‘¤ **Contact Information**\n\n` +
-          `ðŸ“ **Name:** ${contactName}\n` +
-          `ðŸ“± **Phone:** +${phone}\n` +
-          `ðŸ–ï¸ **Handle:** ${handleName}\n` +
+          `👤 **Contact Information**\n\n` +
+          `📝 **Name:** ${contactName}\n` +
+          `📱 **Phone:** +${phone}\n` +
+          `🖐️ **Handle:** ${handleName}\n` +
           userStatus +
-          `ðŸ†” **WhatsApp ID:** \`${jid}\`\n` +
-          `ðŸ“… **First Contact:** ${new Date().toLocaleDateString()}\n\n` +
-          `ðŸ’¬ Messages with this contact will appear here`
+          `🆔 **WhatsApp ID:** \`${jid}\`\n` +
+          `📅 **First Contact:** ${new Date().toLocaleDateString()}\n\n` +
+          `💬 Messages with this contact will appear here`
       }
 
       let sentMessage
@@ -579,7 +579,7 @@ class TelegramBridge {
       if (!this.isUserAuthenticated(userId)) {
         await this.telegramBot.sendMessage(
           msg.chat.id,
-          "ðŸ”’ Access denied. Use /password [your_password] to authenticate.",
+          "🔒 Access denied. Use /password [your_password] to authenticate.",
           {
             message_thread_id: topicId,
           },
@@ -623,7 +623,7 @@ class TelegramBridge {
       }, 2000)
     } catch (error) {
       logger.error("Failed to handle Telegram message:", error.message, error.stack, error.response?.data)
-      await this.setReaction(msg.chat.id, msg.message_id, "âŒ")
+      await this.setReaction(msg.chat.id, msg.message_id, "❌")
     }
   }
 
@@ -633,15 +633,15 @@ class TelegramBridge {
 
     for (const word of this.filters || []) {
       if (textLower.startsWith(word)) {
-        logger.info(`Blocked Telegram âž WhatsApp message due to filter "${word}": ${originalText}`)
-        await this.setReaction(msg.chat.id, msg.message_id, "ðŸš«")
+        logger.info(`Blocked Telegram ➝ WhatsApp message due to filter "${word}": ${originalText}`)
+        await this.setReaction(msg.chat.id, msg.message_id, "🚫")
         return
       }
     }
 
     const messageOptions = { text: originalText }
     if (msg.entities && msg.entities.some((entity) => entity.type === "spoiler")) {
-      messageOptions.text = `ðŸ«¥ ${originalText}`
+      messageOptions.text = `🫥 ${originalText}`
     }
 
     let sendResult
@@ -662,7 +662,7 @@ class TelegramBridge {
     }
 
     if (sendResult?.key?.id) {
-      await this.setReaction(msg.chat.id, msg.message_id, "ðŸ‘")
+      await this.setReaction(msg.chat.id, msg.message_id, "👍")
 
       setTimeout(async () => {
         await this.queueMessageForReadReceipt(whatsappJid, sendResult.key)
@@ -684,12 +684,12 @@ class TelegramBridge {
         const sendResult = await this.whatsappClient.sendMessage(whatsappJid, messageOptions)
 
         if (sendResult?.key?.id) {
-          await this.setReaction(msg.chat.id, msg.message_id, "ðŸ‘")
+          await this.setReaction(msg.chat.id, msg.message_id, "👍")
         }
       }
     } catch (error) {
       logger.error("Failed to forward photo to WhatsApp:", error.message, error.stack)
-      await this.setReaction(msg.chat.id, msg.message_id, "âŒ")
+      await this.setReaction(msg.chat.id, msg.message_id, "❌")
     }
   }
 
@@ -713,12 +713,12 @@ class TelegramBridge {
         const sendResult = await this.whatsappClient.sendMessage(whatsappJid, messageOptions)
 
         if (sendResult?.key?.id) {
-          await this.setReaction(msg.chat.id, msg.message_id, "ðŸ‘")
+          await this.setReaction(msg.chat.id, msg.message_id, "👍")
         }
       }
     } catch (error) {
       logger.error("Failed to forward video to WhatsApp:", error.message, error.stack)
-      await this.setReaction(msg.chat.id, msg.message_id, "âŒ")
+      await this.setReaction(msg.chat.id, msg.message_id, "❌")
     }
   }
 
@@ -729,7 +729,7 @@ class TelegramBridge {
       if (buffer) {
         const messageOptions = {
           video: buffer,
-          caption: "ðŸŽ¥ Video Note",
+          caption: "🎥 Video Note",
           mimetype: "video/mp4",
           ptv: true,
         }
@@ -737,12 +737,12 @@ class TelegramBridge {
         const sendResult = await this.whatsappClient.sendMessage(whatsappJid, messageOptions)
 
         if (sendResult?.key?.id) {
-          await this.setReaction(msg.chat.id, msg.message_id, "ðŸ‘")
+          await this.setReaction(msg.chat.id, msg.message_id, "👍")
         }
       }
     } catch (error) {
       logger.error("Failed to forward video note to WhatsApp:", error.message, error.stack)
-      await this.setReaction(msg.chat.id, msg.message_id, "âŒ")
+      await this.setReaction(msg.chat.id, msg.message_id, "❌")
     }
   }
 
@@ -766,12 +766,12 @@ class TelegramBridge {
         await fs.unlink(filePath).catch(() => {})
 
         if (sendResult?.key?.id) {
-          await this.setReaction(msg.chat.id, msg.message_id, "ðŸ‘")
+          await this.setReaction(msg.chat.id, msg.message_id, "👍")
         }
       }
     } catch (error) {
       logger.error("Failed to forward voice to WhatsApp:", error.message, error.stack)
-      await this.setReaction(msg.chat.id, msg.message_id, "âŒ")
+      await this.setReaction(msg.chat.id, msg.message_id, "❌")
     }
   }
 
@@ -789,12 +789,12 @@ class TelegramBridge {
         const sendResult = await this.whatsappClient.sendMessage(whatsappJid, messageOptions)
 
         if (sendResult?.key?.id) {
-          await this.setReaction(msg.chat.id, msg.message_id, "ðŸ‘")
+          await this.setReaction(msg.chat.id, msg.message_id, "👍")
         }
       }
     } catch (error) {
       logger.error("Failed to forward audio to WhatsApp:", error.message, error.stack)
-      await this.setReaction(msg.chat.id, msg.message_id, "âŒ")
+      await this.setReaction(msg.chat.id, msg.message_id, "❌")
     }
   }
 
@@ -813,12 +813,12 @@ class TelegramBridge {
         const sendResult = await this.whatsappClient.sendMessage(whatsappJid, messageOptions)
 
         if (sendResult?.key?.id) {
-          await this.setReaction(msg.chat.id, msg.message_id, "ðŸ‘")
+          await this.setReaction(msg.chat.id, msg.message_id, "👍")
         }
       }
     } catch (error) {
       logger.error("Failed to forward document to WhatsApp:", error.message, error.stack)
-      await this.setReaction(msg.chat.id, msg.message_id, "âŒ")
+      await this.setReaction(msg.chat.id, msg.message_id, "❌")
     }
   }
 
@@ -843,12 +843,12 @@ class TelegramBridge {
         const sendResult = await this.whatsappClient.sendMessage(whatsappJid, messageOptions)
 
         if (sendResult?.key?.id) {
-          await this.setReaction(msg.chat.id, msg.message_id, "ðŸ‘")
+          await this.setReaction(msg.chat.id, msg.message_id, "👍")
         }
       }
     } catch (error) {
       logger.error("Failed to forward sticker to WhatsApp:", error.message, error.stack)
-      await this.setReaction(msg.chat.id, msg.message_id, "âŒ")
+      await this.setReaction(msg.chat.id, msg.message_id, "❌")
     }
   }
 
@@ -864,7 +864,7 @@ class TelegramBridge {
       const sendResult = await this.whatsappClient.sendMessage(whatsappJid, messageOptions)
 
       if (sendResult?.key?.id) {
-        await this.setReaction(msg.chat.id, msg.message_id, "ðŸ‘")
+        await this.setReaction(msg.chat.id, msg.message_id, "👍")
       }
     } catch (error) {
       logger.error("Failed to forward location to WhatsApp:", error.message, error.stack)
@@ -891,11 +891,11 @@ class TelegramBridge {
       const sendResult = await this.whatsappClient.sendMessage(whatsappJid, messageOptions)
 
       if (sendResult?.key?.id) {
-        await this.setReaction(msg.chat.id, msg.message_id, "ðŸ‘")
+        await this.setReaction(msg.chat.id, msg.message_id, "👍")
       }
     } catch (error) {
       logger.error("Failed to forward contact to WhatsApp:", error.message, error.stack)
-      await this.setReaction(msg.chat.id, msg.message_id, "âŒ")
+      await this.setReaction(msg.chat.id, msg.message_id, "❌")
     }
   }
 
@@ -1060,11 +1060,11 @@ class TelegramBridge {
 
         const chatId = this.config.telegram.chatId
 
-        if (isOutgoing) caption = caption ? `ðŸ“¤ You: ${caption}` : "ðŸ“¤ You sent media"
+        if (isOutgoing) caption = caption ? `📤 You: ${caption}` : "📤 You sent media"
         else if (sender.endsWith("@g.us") && whatsappMsg.key.participant !== sender) {
           const senderPhone = whatsappMsg.key.participant.split("@")[0]
           const senderName = this.contactMappings.get(senderPhone) || senderPhone
-          caption = `ðŸ‘¤ ${senderName}:\n${caption || ""}`
+          caption = `👤 ${senderName}:\n${caption || ""}`
         }
 
         const opts = { caption, message_thread_id: finalTopicId }
@@ -1324,9 +1324,9 @@ class TelegramBridge {
         const senderName = this.contactMappings.get(phone) || `+${phone}`
         const isGroup = whatsappMsg.key.remoteJid.endsWith("@g.us")
 
-        let caption = "ðŸ“ Location"
+        let caption = "📍 Location"
         if (isGroup && participant !== whatsappMsg.key.remoteJid) {
-          caption = `ðŸ‘¤ ${senderName} shared a location`
+          caption = `👤 ${senderName} shared a location`
         }
 
         await this.telegramBot.sendLocation(chatId, locationMsg.degreesLatitude, locationMsg.degreesLongitude, {
@@ -1335,8 +1335,8 @@ class TelegramBridge {
 
         if (locationMsg.name || locationMsg.address) {
           let locationInfo = caption
-          if (locationMsg.name) locationInfo += `\nðŸ·ï¸ ${locationMsg.name}`
-          if (locationMsg.address) locationInfo += `\nðŸ“ ${locationMsg.address}`
+          if (locationMsg.name) locationInfo += `\n🏷️ ${locationMsg.name}`
+          if (locationMsg.address) locationInfo += `\n📍 ${locationMsg.address}`
 
           await this.telegramBot.sendMessage(chatId, locationInfo, {
             message_thread_id: finalTopicId,
@@ -1373,9 +1373,9 @@ class TelegramBridge {
         const senderName = this.contactMappings.get(phone) || `+${phone}`
         const isGroup = whatsappMsg.key.remoteJid.endsWith("@g.us")
 
-        let caption = `ðŸ‘¤ Contact: ${contactMsg.displayName}`
+        let caption = `👤 Contact: ${contactMsg.displayName}`
         if (isGroup && participant !== whatsappMsg.key.remoteJid) {
-          caption = `ðŸ‘¤ ${senderName} shared a contact:\n${contactMsg.displayName}`
+          caption = `👤 ${senderName} shared a contact:\n${contactMsg.displayName}`
         }
 
         let phoneNumber = ""
@@ -1387,7 +1387,7 @@ class TelegramBridge {
         }
 
         if (phoneNumber) {
-          caption += `\nðŸ“± ${phoneNumber}`
+          caption += `\n📱 ${phoneNumber}`
         }
 
         await this.telegramBot.sendMessage(chatId, caption, {
@@ -1424,7 +1424,7 @@ class TelegramBridge {
       const topicId = await this.getOrCreateTopic("status@broadcast", whatsappMsg)
       if (!topicId) return
 
-      let statusText = `ðŸ“± *Status from ${contactName}* (+${phone})`
+      let statusText = `📱 *Status from ${contactName}* (+${phone})`
 
       if (text) {
         statusText += `\n\n${text}`
@@ -1563,7 +1563,7 @@ class TelegramBridge {
       } else if (messageContent.viewOnceMessage) {
         await this.handleWhatsAppMedia(whatsappMsg, "view_once", topicId, true)
       } else if (text) {
-        const messageText = `ðŸ“¤ You: ${text}`
+        const messageText = `📤 You: ${text}`
         await this.sendSimpleMessage(topicId, messageText, sender)
       }
     } catch (error) {
@@ -1659,7 +1659,7 @@ class TelegramBridge {
       }
 
       if (currentProfilePicUrl) {
-        const caption = isUpdate ? "ðŸ“¸ Profile picture updated" : "ðŸ“¸ Profile Picture"
+        const caption = isUpdate ? "📸 Profile picture updated" : "📸 Profile Picture"
 
         logger.debug(`Sending ${isUpdate ? "updated" : "initial"} profile picture for ${jid}`)
 
@@ -1691,7 +1691,7 @@ class TelegramBridge {
         return
       }
 
-      const caption = isUpdate ? "ðŸ“¸ Profile picture updated" : "ðŸ“¸ Profile Picture"
+      const caption = isUpdate ? "📸 Profile picture updated" : "📸 Profile Picture"
 
       logger.debug(`Sending ${isUpdate ? "updated" : "initial"} profile picture for ${jid}`)
 
@@ -1735,11 +1735,11 @@ class TelegramBridge {
       }
 
       const callMessage =
-        `ðŸ“ž **Incoming Call**\n\n` +
-        `ðŸ‘¤ **From:** ${callerName}\n` +
-        `ðŸ“± **Number:** +${phone}\n` +
-        `â° **Time:** ${new Date().toLocaleString()}\n` +
-        `ðŸ“‹ **Status:** ${callEvent.status || "Incoming"}`
+        `📞 **Incoming Call**\n\n` +
+        `👤 **From:** ${callerName}\n` +
+        `📱 **Number:** +${phone}\n` +
+        `⏰ **Time:** ${new Date().toLocaleString()}\n` +
+        `📋 **Status:** ${callEvent.status || "Incoming"}`
 
       await this.telegramBot.sendMessage(this.config.telegram.chatId, callMessage, {
         message_thread_id: topicId,
@@ -1765,11 +1765,11 @@ class TelegramBridge {
           const callerName = this.contactMappings.get(phone) || `+${phone}`
 
           const callMessage =
-            `ðŸ“ž **Incoming Call**\n\n` +
-            `ðŸ‘¤ **From:** ${callerName}\n` +
-            `ðŸ“± **Number:** +${phone}\n` +
-            `â° **Time:** ${new Date().toLocaleString()}\n` +
-            `ðŸ“‹ **Status:** ${callEvent.status || "Incoming"}`
+            `📞 **Incoming Call**\n\n` +
+            `👤 **From:** ${callerName}\n` +
+            `📱 **Number:** +${phone}\n` +
+            `⏰ **Time:** ${new Date().toLocaleString()}\n` +
+            `📋 **Status:** ${callEvent.status || "Incoming"}`
 
           await this.telegramBot.sendMessage(this.config.telegram.chatId, callMessage, {
             message_thread_id: newTopicId,
@@ -1814,7 +1814,7 @@ class TelegramBridge {
         await this.telegramBot.sendMessage(msg.chat.id, `Status reply sent to ${contactName}`, {
           message_thread_id: msg.message_thread_id,
         })
-        await this.setReaction(msg.chat.id, msg.message_id, "âœ…")
+        await this.setReaction(msg.chat.id, msg.message_id, "✅")
         logger.debug(`Sent status reply to ${statusJid} for ${contactName}`)
       } else {
         throw new Error("Failed to send status reply")
@@ -1828,7 +1828,7 @@ class TelegramBridge {
       await this.telegramBot.sendMessage(msg.chat.id, `Failed to send reply to ${contactName || "contact"}`, {
         message_thread_id: msg.message_thread_id,
       })
-      await this.setReaction(msg.chat.id, msg.message_id, "âŒ")
+      await this.setReaction(msg.chat.id, msg.message_id, "❌")
     }
   }
 
@@ -1959,10 +1959,10 @@ class TelegramBridge {
 
       await this.telegramBot.sendPhoto(chatId, qrImagePath, {
         caption:
-          "ðŸ“± *WhatsApp QR Code*\n\n" +
-          "ðŸ”„ Scan this QR code with WhatsApp to connect\n" +
-          "â° QR code expires in 30 seconds\n\n" +
-          "ðŸ’¡ Open WhatsApp â†’ Settings â†’ Linked Devices â†’ Link a Device",
+          "📱 *WhatsApp QR Code*\n\n" +
+          "🔄 Scan this QR code with WhatsApp to connect\n" +
+          "⏰ QR code expires in 30 seconds\n\n" +
+          "💡 Open WhatsApp → Settings → Linked Devices → Link a Device",
         parse_mode: "Markdown",
       })
 
@@ -1999,9 +1999,9 @@ class TelegramBridge {
 
       await this.telegramBot.sendPhoto(channelId, qrImagePath, {
         caption:
-          "ðŸ“± *WhatsApp QR Code (Log Channel)*\n\n" +
-          "ðŸ”„ Scan this QR code with WhatsApp to connect\n" +
-          "â° QR code expires in 30 seconds",
+          "📱 *WhatsApp QR Code (Log Channel)*\n\n" +
+          "🔄 Scan this QR code with WhatsApp to connect\n" +
+          "⏰ QR code expires in 30 seconds",
         parse_mode: "Markdown",
       })
 
@@ -2028,13 +2028,13 @@ class TelegramBridge {
       const logChannel = this.config.telegram.logChannel
 
       const startMessage =
-        `ðŸš€ *Neoxr WhatsApp Bridge Started!*\n\n` +
-        `âœ… WhatsApp: Connected\n` +
-        `âœ… Telegram Bridge: Active\n` +
-        `ðŸ“ž Contacts: ${this.contactMappings.size} synced\n` +
-        `ðŸ’¬ Chats: ${this.chatMappings.size} mapped\n` +
-        `ðŸ”— Ready to bridge messages!\n\n` +
-        `â° Started at: ${new Date().toLocaleString()}`
+        `🚀 *Neoxr WhatsApp Bridge Started!*\n\n` +
+        `✅ WhatsApp: Connected\n` +
+        `✅ Telegram Bridge: Active\n` +
+        `📞 Contacts: ${this.contactMappings.size} synced\n` +
+        `💬 Chats: ${this.chatMappings.size} mapped\n` +
+        `🔗 Ready to bridge messages!\n\n` +
+        `⏰ Started at: ${new Date().toLocaleString()}`
 
       if (chatId && !chatId.includes("YOUR_CHAT_ID")) {
         await this.telegramBot.sendMessage(chatId, startMessage, {
