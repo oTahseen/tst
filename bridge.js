@@ -283,7 +283,6 @@ class TelegramBridge {
       }),
     )
 
-    // Add callback_query handler for pagination buttons
     this.telegramBot.on(
       "callback_query",
       this.wrapHandler(async (callbackQuery) => {
