@@ -166,23 +166,11 @@ class TelegramCommands {
   }
 
   async handleSync(chatId) {
-    await this.bridge.telegramBot.sendMessage(chatId, "🔄 Syncing contacts...", { parse_mode: "Markdown" })
-    try {
-      await this.bridge.syncContacts()
-      await this.bridge.saveMappingsToDb?.()
-      await this.bridge.telegramBot.sendMessage(
-        chatId,
-        `✅ Synced ${this.bridge.contactMappings.size} contacts from WhatsApp`,
-        { parse_mode: "Markdown" },
-      )
-    } catch (error) {
-      await this.bridge.telegramBot.sendMessage(chatId, `❌ Failed to sync: ${error.message}`, {
-        parse_mode: "Markdown",
-      })
-    }
+    // This function is now handled in telegram-bridge.js to allow message editing
+    // It's kept here for completeness but the actual logic is in the bridge
   }
 
-  async handleSearchContact(chatId, args, page = 0) {
+  async handleSearchContact(chatId, args, page = 0, messageId = null) {
     if (args.length === 0) {
       return this.bridge.telegramBot.sendMessage(
         chatId,
@@ -196,9 +184,20 @@ class TelegramCommands {
     const matches = contacts.filter(([phone, name]) => phone.includes(query) || name?.toLowerCase().includes(query))
 
     if (matches.length === 0) {
-      return this.bridge.telegramBot.sendMessage(chatId, `❌ No contacts found for "${query}"`, {
-        parse_mode: "Markdown",
-      })
+      const noResultsMessage = `❌ No contacts found for "${query}"`
+      if (messageId) {
+        await this.bridge.telegramBot.editMessageText(noResultsMessage, {
+          chat_id: chatId,
+          message_id: messageId,
+          parse_mode: "Markdown",
+          reply_markup: { inline_keyboard: [] }, // Clear buttons
+        })
+      } else {
+        await this.bridge.telegramBot.sendMessage(chatId, noResultsMessage, {
+          parse_mode: "Markdown",
+        })
+      }
+      return
     }
 
     const itemsPerPage = 15
@@ -246,7 +245,27 @@ class TelegramCommands {
       reply_markup: keyboard.length > 0 ? { inline_keyboard: keyboard } : undefined,
     }
 
-    await this.bridge.telegramBot.sendMessage(chatId, message, options)
+    if (messageId) {
+      await this.bridge.telegramBot.editMessageText(message, {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: "Markdown",
+        reply_markup: options.reply_markup,
+      })
+    } else {
+      const sentMessage = await this.bridge.telegramBot.sendMessage(chatId, message, options)
+      messageId = sentMessage.message_id
+    }
+
+    // Store pagination state
+    this.paginationState.set(chatId, {
+      type: "search",
+      query: query,
+      currentPage: currentPage,
+      totalPages: totalPages,
+      totalItems: matches.length,
+      messageId: messageId, // Store message ID
+    })
   }
 
   async handleAddFilter(chatId, args) {
@@ -296,10 +315,23 @@ class TelegramCommands {
     }
   }
 
-  async handleContacts(chatId, page = 0) {
+  async handleContacts(chatId, page = 0, messageId = null) {
     const contacts = [...this.bridge.contactMappings.entries()]
     if (contacts.length === 0) {
-      return this.bridge.telegramBot.sendMessage(chatId, "⚠️ No contacts found.", { parse_mode: "Markdown" })
+      const noContactsMessage = "⚠️ No contacts found."
+      if (messageId) {
+        await this.bridge.telegramBot.editMessageText(noContactsMessage, {
+          chat_id: chatId,
+          message_id: messageId,
+          parse_mode: "Markdown",
+          reply_markup: { inline_keyboard: [] }, // Clear buttons
+        })
+      } else {
+        await this.bridge.telegramBot.sendMessage(chatId, noContactsMessage, {
+          parse_mode: "Markdown",
+        })
+      }
+      return
     }
 
     const itemsPerPage = 20
@@ -341,19 +373,21 @@ class TelegramCommands {
       keyboard.push(buttonRow)
     }
 
-    // Add refresh button
-    keyboard.push([
-      {
-        text: "🔄 Refresh",
-        callback_data: `contacts_refresh_${currentPage}`,
-      },
-    ])
-
     const options = {
       parse_mode: "Markdown",
-      reply_markup: {
-        inline_keyboard: keyboard,
-      },
+      reply_markup: keyboard.length > 0 ? { inline_keyboard: keyboard } : undefined,
+    }
+
+    if (messageId) {
+      await this.bridge.telegramBot.editMessageText(message, {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: "Markdown",
+        reply_markup: options.reply_markup,
+      })
+    } else {
+      const sentMessage = await this.bridge.telegramBot.sendMessage(chatId, message, options)
+      messageId = sentMessage.message_id
     }
 
     // Store pagination state
@@ -362,9 +396,8 @@ class TelegramCommands {
       currentPage: currentPage,
       totalPages: totalPages,
       totalItems: contacts.length,
+      messageId: messageId, // Store message ID
     })
-
-    await this.bridge.telegramBot.sendMessage(chatId, message, options)
   }
 
   async handleCallbackQuery(callbackQuery) {
@@ -387,12 +420,8 @@ class TelegramCommands {
         const [action, direction, pageStr] = data.split("_")
         const page = Number.parseInt(pageStr)
 
-        if (direction === "prev" || direction === "next" || direction === "refresh") {
-          // Delete the old message
-          await this.bridge.telegramBot.deleteMessage(chatId, messageId)
-
-          // Send new message with updated page
-          await this.handleContacts(chatId, page)
+        if (direction === "prev" || direction === "next") {
+          await this.handleContacts(chatId, page, messageId)
 
           // Answer the callback query
           await this.bridge.telegramBot.answerCallbackQuery(callbackQuery.id, {
@@ -405,11 +434,7 @@ class TelegramCommands {
         const query = Buffer.from(encodedQuery, "base64").toString()
 
         if (direction === "prev" || direction === "next") {
-          // Delete the old message
-          await this.bridge.telegramBot.deleteMessage(chatId, messageId)
-
-          // Send new message with updated page
-          await this.handleSearchContact(chatId, [query], page)
+          await this.handleSearchContact(chatId, [query], page, messageId)
 
           // Answer the callback query
           await this.bridge.telegramBot.answerCallbackQuery(callbackQuery.id, {
