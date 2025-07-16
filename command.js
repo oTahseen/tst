@@ -3,6 +3,7 @@ const logger = require("../system/logger")
 class TelegramCommands {
   constructor(bridge) {
     this.bridge = bridge
+    this.paginationState = new Map() // Add this line to track pagination state
   }
 
   async handleCommand(msg) {
@@ -43,7 +44,8 @@ class TelegramCommands {
           await this.handleSync(msg.chat.id)
           break
         case "/contacts":
-          await this.handleContacts(msg.chat.id)
+          const pageArg = args[0] ? Number.parseInt(args[0]) - 1 : 0 // Convert to 0-based index
+          await this.handleContacts(msg.chat.id, pageArg)
           break
         case "/searchcontact":
           await this.handleSearchContact(msg.chat.id, args)
@@ -180,7 +182,7 @@ class TelegramCommands {
     }
   }
 
-  async handleSearchContact(chatId, args) {
+  async handleSearchContact(chatId, args, page = 0) {
     if (args.length === 0) {
       return this.bridge.telegramBot.sendMessage(
         chatId,
@@ -199,8 +201,52 @@ class TelegramCommands {
       })
     }
 
-    const result = matches.map(([phone, name]) => `📱 ${name || "Unknown"} (+${phone})`).join("\n")
-    await this.bridge.telegramBot.sendMessage(chatId, `🔍 *Search Results*\n\n${result}`, { parse_mode: "Markdown" })
+    const itemsPerPage = 15
+    const totalPages = Math.ceil(matches.length / itemsPerPage)
+    const currentPage = Math.max(0, Math.min(page, totalPages - 1))
+
+    const startIndex = currentPage * itemsPerPage
+    const endIndex = Math.min(startIndex + itemsPerPage, matches.length)
+
+    const result = matches
+      .slice(startIndex, endIndex)
+      .map(([phone, name], index) => `${startIndex + index + 1}. 📱 ${name || "Unknown"} (+${phone})`)
+      .join("\n")
+
+    const message =
+      `🔍 *Search Results for "${query}"*\n` +
+      `📊 Found ${matches.length} matches\n` +
+      `📄 Page ${currentPage + 1} of ${totalPages}\n\n` +
+      `${result}`
+
+    // Create pagination buttons for search results
+    const keyboard = []
+    const buttonRow = []
+
+    if (currentPage > 0) {
+      buttonRow.push({
+        text: "⬅️ Previous",
+        callback_data: `search_prev_${currentPage - 1}_${Buffer.from(query).toString("base64")}`,
+      })
+    }
+
+    if (currentPage < totalPages - 1) {
+      buttonRow.push({
+        text: "Next ➡️",
+        callback_data: `search_next_${currentPage + 1}_${Buffer.from(query).toString("base64")}`,
+      })
+    }
+
+    if (buttonRow.length > 0) {
+      keyboard.push(buttonRow)
+    }
+
+    const options = {
+      parse_mode: "Markdown",
+      reply_markup: keyboard.length > 0 ? { inline_keyboard: keyboard } : undefined,
+    }
+
+    await this.bridge.telegramBot.sendMessage(chatId, message, options)
   }
 
   async handleAddFilter(chatId, args) {
@@ -250,19 +296,134 @@ class TelegramCommands {
     }
   }
 
-  async handleContacts(chatId) {
+  async handleContacts(chatId, page = 0) {
     const contacts = [...this.bridge.contactMappings.entries()]
     if (contacts.length === 0) {
       return this.bridge.telegramBot.sendMessage(chatId, "⚠️ No contacts found.", { parse_mode: "Markdown" })
     }
 
+    const itemsPerPage = 20
+    const totalPages = Math.ceil(contacts.length / itemsPerPage)
+    const currentPage = Math.max(0, Math.min(page, totalPages - 1))
+
+    const startIndex = currentPage * itemsPerPage
+    const endIndex = Math.min(startIndex + itemsPerPage, contacts.length)
+
     const contactList = contacts
-      .slice(0, 20)
-      .map(([phone, name]) => `📱 ${name || "Unknown"} (+${phone})`)
+      .slice(startIndex, endIndex)
+      .map(([phone, name], index) => `${startIndex + index + 1}. 📱 ${name || "Unknown"} (+${phone})`)
       .join("\n")
 
-    const message = `📞 *Contacts (${contacts.length} total, showing first 20):*\n\n${contactList}`
-    await this.bridge.telegramBot.sendMessage(chatId, message, { parse_mode: "Markdown" })
+    const message =
+      `📞 *Contacts (${contacts.length} total)*\n` +
+      `📄 Page ${currentPage + 1} of ${totalPages}\n\n` +
+      `${contactList}`
+
+    // Create inline keyboard for pagination
+    const keyboard = []
+    const buttonRow = []
+
+    if (currentPage > 0) {
+      buttonRow.push({
+        text: "⬅️ Previous",
+        callback_data: `contacts_prev_${currentPage - 1}`,
+      })
+    }
+
+    if (currentPage < totalPages - 1) {
+      buttonRow.push({
+        text: "Next ➡️",
+        callback_data: `contacts_next_${currentPage + 1}`,
+      })
+    }
+
+    if (buttonRow.length > 0) {
+      keyboard.push(buttonRow)
+    }
+
+    // Add refresh button
+    keyboard.push([
+      {
+        text: "🔄 Refresh",
+        callback_data: `contacts_refresh_${currentPage}`,
+      },
+    ])
+
+    const options = {
+      parse_mode: "Markdown",
+      reply_markup: {
+        inline_keyboard: keyboard,
+      },
+    }
+
+    // Store pagination state
+    this.paginationState.set(chatId, {
+      type: "contacts",
+      currentPage: currentPage,
+      totalPages: totalPages,
+      totalItems: contacts.length,
+    })
+
+    await this.bridge.telegramBot.sendMessage(chatId, message, options)
+  }
+
+  async handleCallbackQuery(callbackQuery) {
+    const chatId = callbackQuery.message.chat.id
+    const messageId = callbackQuery.message.message_id
+    const data = callbackQuery.data
+    const userId = callbackQuery.from.id
+
+    // Check authentication
+    if (!this.bridge.isUserAuthenticated(userId)) {
+      await this.bridge.telegramBot.answerCallbackQuery(callbackQuery.id, {
+        text: "🔒 Access denied. Use /password to authenticate.",
+        show_alert: true,
+      })
+      return
+    }
+
+    try {
+      if (data.startsWith("contacts_")) {
+        const [action, direction, pageStr] = data.split("_")
+        const page = Number.parseInt(pageStr)
+
+        if (direction === "prev" || direction === "next" || direction === "refresh") {
+          // Delete the old message
+          await this.bridge.telegramBot.deleteMessage(chatId, messageId)
+
+          // Send new message with updated page
+          await this.handleContacts(chatId, page)
+
+          // Answer the callback query
+          await this.bridge.telegramBot.answerCallbackQuery(callbackQuery.id, {
+            text: `📄 Page ${page + 1}`,
+          })
+        }
+      } else if (data.startsWith("search_")) {
+        const [action, direction, pageStr, encodedQuery] = data.split("_")
+        const page = Number.parseInt(pageStr)
+        const query = Buffer.from(encodedQuery, "base64").toString()
+
+        if (direction === "prev" || direction === "next") {
+          // Delete the old message
+          await this.bridge.telegramBot.deleteMessage(chatId, messageId)
+
+          // Send new message with updated page
+          await this.handleSearchContact(chatId, [query], page)
+
+          // Answer the callback query
+          await this.bridge.telegramBot.answerCallbackQuery(callbackQuery.id, {
+            text: `📄 Page ${page + 1}`,
+          })
+        }
+      }
+    } catch (error) {
+      logger.error("Error handling callback query:", error)
+      await this.bridge.telegramBot.answerCallbackQuery(callbackQuery.id, {
+        text: "❌ Error occurred",
+        show_alert: true,
+      })
+    }
   }
 
   async handleMenu(chatId) {
@@ -273,11 +434,12 @@ class TelegramCommands {
       `/status - Show bridge status\n` +
       `/send <number> <msg> - Send WhatsApp message\n` +
       `/sync - Sync WhatsApp contacts\n` +
-      `/contacts - List contacts\n` +
-      `/searchcontact <name/phone> - Search contacts\n` +
+      `/contacts [page] - List contacts (with pagination)\n` +
+      `/searchcontact <name/phone> - Search contacts (with pagination)\n` +
       `/addfilter <word> - Block WA messages starting with it\n` +
       `/filters - Show current filters\n` +
-      `/clearfilters - Remove all filters`
+      `/clearfilters - Remove all filters\n\n` +
+      `💡 *Tip:* Use the Previous/Next buttons to navigate through contacts!`
     await this.bridge.telegramBot.sendMessage(chatId, message, { parse_mode: "Markdown" })
   }
 
