@@ -15,7 +15,7 @@ const FormData = require("form-data")
 class TelegramBridge {
   constructor(whatsappClient, database) {
     this.whatsappClient = whatsappClient
-    this.database = database  // Fixed: Use passed database parameter
+    this.database = database
     this.telegramBot = null
     this.commands = null
     this.chatMappings = new Map()
@@ -755,23 +755,15 @@ class TelegramBridge {
         const filePath = path.join(this.tempDir, fileName)
         await fs.writeFile(filePath, buffer)
 
-        // Convert to proper format for WhatsApp
-        const convertedPath = await this.convertAudioFormat(filePath, "ogg")
-          .catch(() => filePath) // Fallback to original on error
-
         const messageOptions = {
-          audio: await fs.readFile(convertedPath),
+          audio: await fs.readFile(filePath),
           mimetype: "audio/ogg; codecs=opus",
           ptt: true,
         }
 
         const sendResult = await this.whatsappClient.sendMessage(whatsappJid, messageOptions)
 
-        // Cleanup files
         await fs.unlink(filePath).catch(() => {})
-        if (convertedPath !== filePath) {
-          await fs.unlink(convertedPath).catch(() => {})
-        }
 
         if (sendResult?.key?.id) {
           await this.setReaction(msg.chat.id, msg.message_id, "👍")
@@ -781,35 +773,6 @@ class TelegramBridge {
       logger.error("Failed to forward voice to WhatsApp:", error.message, error.stack)
       await this.setReaction(msg.chat.id, msg.message_id, "❌")
     }
-  }
-
-  async convertAudioFormat(inputPath, outputFormat = "ogg") {
-    return new Promise((resolve, reject) => {
-      const outputPath = inputPath.replace(/\.[^.]+$/, `_converted.${outputFormat}`)
-      let timeoutId = null
-      
-      const ffmpegProcess = ffmpeg(inputPath)
-        .toFormat(outputFormat)
-        .on('end', () => {
-          if (timeoutId) clearTimeout(timeoutId)
-          resolve(outputPath)
-        })
-        .on('error', (err) => {
-          if (timeoutId) clearTimeout(timeoutId)
-          logger.error(`Audio conversion failed: ${err.message}`)
-          reject(err)
-        })
-        .save(outputPath)
-
-      // Set timeout to prevent hanging
-      timeoutId = setTimeout(() => {
-        if (ffmpegProcess) {
-          ffmpegProcess.kill('SIGTERM')
-          logger.warn("FFmpeg audio conversion timed out")
-          reject(new Error("Conversion timed out"))
-        }
-      }, 30000) // 30 second timeout
-    })
   }
 
   async handleTelegramAudio(msg, whatsappJid) {
