@@ -69,13 +69,56 @@ class TelegramCommands {
   }
 
   async handleStart(chatId) {
-    const statusText =
-      `🤖 *Neoxr WhatsApp-Telegram Bridge*\n\n` +
-      `Status: ${this.bridge.telegramBot ? "✅ Ready" : "⏳ Initializing..."}\n` +
-      `Linked Chats: ${this.bridge.chatMappings?.size || 0}\n` +
-      `Contacts: ${this.bridge.contactMappings?.size || 0}\n` +
-      `Users: ${this.bridge.userMappings?.size || 0}`
-    await this.bridge.telegramBot.sendMessage(chatId, statusText, { parse_mode: "Markdown" })
+    try {
+      // Calculate uptime
+      const uptimeMs = process.uptime() * 1000
+      const startTime = new Date(Date.now() - uptimeMs)
+
+      // Format uptime duration
+      const formatUptime = (ms) => {
+        const seconds = Math.floor(ms / 1000)
+        const minutes = Math.floor(seconds / 60)
+        const hours = Math.floor(minutes / 60)
+        const days = Math.floor(hours / 24)
+
+        const h = hours % 24
+        const m = minutes % 60
+        const s = seconds % 60
+
+        if (days > 0) {
+          return `${days}d${h}h${m}m${s}s`
+        } else if (hours > 0) {
+          return `${h}h${m}m${s}s`
+        } else if (minutes > 0) {
+          return `${m}m${s}s`
+        } else {
+          return `${s}s`
+        }
+      }
+
+      // Format start time
+      const formatDate = (date) => {
+        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+
+        const day = date.getDate().toString().padStart(2, "0")
+        const month = months[date.getMonth()]
+        const year = date.getFullYear()
+        const dayName = days[date.getDay()]
+        const hours = date.getHours().toString().padStart(2, "0")
+        const minutes = date.getMinutes().toString().padStart(2, "0")
+
+        return `${day} ${month}, ${year} - ${dayName} @ ${hours}:${minutes}`
+      }
+
+      const statusText =
+        `Hi! The bot is up and running\n\n` + `• Up Since: ${formatDate(startTime)} [ ${formatUptime(uptimeMs)} ]`
+
+      await this.bridge.telegramBot.sendMessage(chatId, statusText, { parse_mode: "Markdown" })
+    } catch (error) {
+      logger.error("Error in handleStart:", error)
+      await this.bridge.telegramBot.sendMessage(chatId, "Hi! The bot is up and running", { parse_mode: "Markdown" })
+    }
   }
 
   async handleStatus(chatId) {
