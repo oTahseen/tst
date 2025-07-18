@@ -57,6 +57,7 @@ class TelegramBridge {
         },
       },
     }
+    this.messageMapping = new Map() // Maps telegram messageId to whatsapp message key
   }
 
   async initialize() {
@@ -370,7 +371,7 @@ class TelegramBridge {
         messageText = `👤 ${senderName}:\n${text}`
       }
 
-      await this.sendSimpleMessage(topicId, messageText, sender)
+      await this.sendSimpleMessage(topicId, messageText, sender, whatsappMsg.key)
     }
 
     if (whatsappMsg.key?.id && this.config.telegram.features.readReceipts !== false) {
@@ -527,13 +528,26 @@ class TelegramBridge {
     }
   }
 
-  async sendSimpleMessage(topicId, text, sender) {
+  async sendSimpleMessage(topicId, text, sender, whatsappKey = null) {
     const chatId = this.config.telegram.chatId
 
     try {
       const sentMessage = await this.telegramBot.sendMessage(chatId, text, {
         message_thread_id: topicId,
       })
+
+      // Store message mapping if whatsappKey is provided
+      if (whatsappKey && sentMessage.message_id) {
+        this.messageMapping.set(sentMessage.message_id, {
+          whatsappKey: whatsappKey,
+          whatsappJid: sender,
+          timestamp: Date.now(),
+        })
+
+        // Clean up old mappings (older than 24 hours)
+        this.cleanupMessageMappings()
+      }
+
       return sentMessage.message_id
     } catch (error) {
       const desc = error.response?.data?.description || error.message
@@ -572,6 +586,17 @@ class TelegramBridge {
     }
   }
 
+  cleanupMessageMappings() {
+    const now = Date.now()
+    const maxAge = 24 * 60 * 60 * 1000 // 24 hours
+
+    for (const [messageId, data] of this.messageMapping.entries()) {
+      if (now - data.timestamp > maxAge) {
+        this.messageMapping.delete(messageId)
+      }
+    }
+  }
+
   async handleTelegramMessage(msg) {
     try {
       const topicId = msg.message_thread_id
@@ -584,17 +609,20 @@ class TelegramBridge {
 
       const userId = msg.from.id
       if (!this.isUserAuthenticated(userId)) {
-        await this.telegramBot.sendMessage(
-          msg.chat.id,
-          "🔒 Access denied. Use /password to authenticate.",
-          {
-            message_thread_id: topicId,
-          },
-        )
+        await this.telegramBot.sendMessage(msg.chat.id, "🔒 Access denied. Use /password to authenticate.", {
+          message_thread_id: topicId,
+        })
         return
       }
 
-      await this.sendTypingPresence(whatsappJid)
+      // Handle reply to WhatsApp message
+      if (msg.reply_to_message && msg.reply_to_message.message_id) {
+        const replyMapping = this.messageMapping.get(msg.reply_to_message.message_id)
+        if (replyMapping) {
+          await this.handleTelegramReply(msg, whatsappJid, replyMapping)
+          return
+        }
+      }
 
       if (whatsappJid === "status@broadcast" && msg.reply_to_message) {
         await this.handleStatusReply(msg)
@@ -630,6 +658,97 @@ class TelegramBridge {
       }, 2000)
     } catch (error) {
       logger.error("Failed to handle Telegram message:", error.message, error.stack, error.response?.data)
+      await this.setReaction(msg.chat.id, msg.message_id, "❌")
+    }
+  }
+
+  async handleTelegramReply(msg, whatsappJid, replyMapping) {
+    try {
+      await this.sendTypingPresence(whatsappJid)
+
+      let messageOptions = {}
+
+      if (msg.text) {
+        messageOptions = {
+          text: msg.text,
+          contextInfo: {
+            stanzaId: replyMapping.whatsappKey.id,
+            participant: replyMapping.whatsappKey.participant || replyMapping.whatsappJid,
+            quotedMessage: {
+              conversation: "Original message", // Placeholder since we don't store original content
+            },
+          },
+        }
+      } else if (msg.photo) {
+        const buffer = await this.downloadTelegramMedia(msg.photo[msg.photo.length - 1].file_id)
+        if (buffer) {
+          messageOptions = {
+            image: buffer,
+            caption: msg.caption || "",
+            contextInfo: {
+              stanzaId: replyMapping.whatsappKey.id,
+              participant: replyMapping.whatsappKey.participant || replyMapping.whatsappJid,
+              quotedMessage: {
+                conversation: "Original message",
+              },
+            },
+          }
+        }
+      } else if (msg.video || msg.animation) {
+        const fileId = msg.video?.file_id || msg.animation?.file_id
+        const buffer = await this.downloadTelegramMedia(fileId)
+        if (buffer) {
+          messageOptions = {
+            video: buffer,
+            caption: msg.caption || "",
+            mimetype: "video/mp4",
+            gifPlayback: !!msg.animation,
+            contextInfo: {
+              stanzaId: replyMapping.whatsappKey.id,
+              participant: replyMapping.whatsappKey.participant || replyMapping.whatsappJid,
+              quotedMessage: {
+                conversation: "Original message",
+              },
+            },
+          }
+        }
+      } else if (msg.document) {
+        const buffer = await this.downloadTelegramMedia(msg.document.file_id)
+        if (buffer) {
+          messageOptions = {
+            document: buffer,
+            mimetype: msg.document.mime_type || "application/octet-stream",
+            fileName: msg.document.file_name || "document",
+            caption: msg.caption || "",
+            contextInfo: {
+              stanzaId: replyMapping.whatsappKey.id,
+              participant: replyMapping.whatsappKey.participant || replyMapping.whatsappJid,
+              quotedMessage: {
+                conversation: "Original message",
+              },
+            },
+          }
+        }
+      }
+
+      if (Object.keys(messageOptions).length > 0) {
+        const sendResult = await this.whatsappClient.sendMessage(whatsappJid, messageOptions)
+
+        if (sendResult?.key?.id) {
+          await this.setReaction(msg.chat.id, msg.message_id, "↩️")
+          logger.debug(`Sent reply to WhatsApp message ${replyMapping.whatsappKey.id}`)
+
+          setTimeout(async () => {
+            await this.queueMessageForReadReceipt(whatsappJid, sendResult.key)
+          }, 1000)
+        }
+      }
+
+      setTimeout(async () => {
+        await this.sendPresence(whatsappJid, "available")
+      }, 2000)
+    } catch (error) {
+      logger.error("Failed to handle Telegram reply:", error)
       await this.setReaction(msg.chat.id, msg.message_id, "❌")
     }
   }
@@ -1076,45 +1195,94 @@ class TelegramBridge {
 
         const opts = { caption, message_thread_id: finalTopicId }
 
+        let sentMessage
         switch (mediaTypeHint) {
           case "image":
-            await this.telegramBot.sendPhoto(chatId, filePath, opts)
+            sentMessage = await this.telegramBot.sendPhoto(chatId, filePath, opts)
+            // Store mapping
+            if (sentMessage && sentMessage.message_id && whatsappMsg.key) {
+              this.messageMapping.set(sentMessage.message_id, {
+                whatsappKey: whatsappMsg.key,
+                whatsappJid: whatsappMsg.key.remoteJid,
+                timestamp: Date.now(),
+              })
+            }
             break
           case "video":
             mediaMessage.gifPlayback
-              ? await this.telegramBot.sendAnimation(chatId, filePath, opts)
-              : await this.telegramBot.sendVideo(chatId, filePath, opts)
+              ? (sentMessage = await this.telegramBot.sendAnimation(chatId, filePath, opts))
+              : (sentMessage = await this.telegramBot.sendVideo(chatId, filePath, opts))
+            // Store mapping
+            if (sentMessage && sentMessage.message_id && whatsappMsg.key) {
+              this.messageMapping.set(sentMessage.message_id, {
+                whatsappKey: whatsappMsg.key,
+                whatsappJid: whatsappMsg.key.remoteJid,
+                timestamp: Date.now(),
+              })
+            }
             break
           case "ptv":
           case "video_note":
             const notePath = await this.convertToVideoNote(filePath)
-            await this.telegramBot.sendVideoNote(chatId, notePath, { message_thread_id: finalTopicId })
+            sentMessage = await this.telegramBot.sendVideoNote(chatId, notePath, { message_thread_id: finalTopicId })
+            // Store mapping
+            if (sentMessage && sentMessage.message_id && whatsappMsg.key) {
+              this.messageMapping.set(sentMessage.message_id, {
+                whatsappKey: whatsappMsg.key,
+                whatsappJid: whatsappMsg.key.remoteJid,
+                timestamp: Date.now(),
+              })
+            }
             if (notePath !== filePath) await fs.unlink(notePath).catch(() => {})
             break
           case "audio":
             if (mediaMessage.ptt) {
-              await this.telegramBot.sendVoice(chatId, filePath, opts)
+              sentMessage = await this.telegramBot.sendVoice(chatId, filePath, opts)
             } else {
-              await this.telegramBot.sendAudio(chatId, filePath, {
+              sentMessage = await this.telegramBot.sendAudio(chatId, filePath, {
                 ...opts,
                 title: mediaMessage.title || "Audio",
               })
             }
+            // Store mapping
+            if (sentMessage && sentMessage.message_id && whatsappMsg.key) {
+              this.messageMapping.set(sentMessage.message_id, {
+                whatsappKey: whatsappMsg.key,
+                whatsappJid: whatsappMsg.key.remoteJid,
+                timestamp: Date.now(),
+              })
+            }
             break
           case "document":
-            await this.telegramBot.sendDocument(chatId, filePath, opts)
+            sentMessage = await this.telegramBot.sendDocument(chatId, filePath, opts)
+            // Store mapping
+            if (sentMessage && sentMessage.message_id && whatsappMsg.key) {
+              this.messageMapping.set(sentMessage.message_id, {
+                whatsappKey: whatsappMsg.key,
+                whatsappJid: whatsappMsg.key.remoteJid,
+                timestamp: Date.now(),
+              })
+            }
             break
           case "sticker":
             try {
-              await this.telegramBot.sendSticker(chatId, filePath, { message_thread_id: finalTopicId })
+              sentMessage = await this.telegramBot.sendSticker(chatId, filePath, { message_thread_id: finalTopicId })
             } catch {
               const pngPath = filePath.replace(".webp", ".png")
               await sharp(filePath).png().toFile(pngPath)
-              await this.telegramBot.sendPhoto(chatId, pngPath, {
+              sentMessage = await this.telegramBot.sendPhoto(chatId, pngPath, {
                 caption: caption || "Sticker",
                 message_thread_id: finalTopicId,
               })
               await fs.unlink(pngPath).catch(() => {})
+            }
+            // Store mapping
+            if (sentMessage && sentMessage.message_id && whatsappMsg.key) {
+              this.messageMapping.set(sentMessage.message_id, {
+                whatsappKey: whatsappMsg.key,
+                whatsappJid: whatsappMsg.key.remoteJid,
+                timestamp: Date.now(),
+              })
             }
             break
         }
