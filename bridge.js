@@ -735,7 +735,7 @@ class TelegramBridge {
         const sendResult = await this.whatsappClient.sendMessage(whatsappJid, messageOptions)
 
         if (sendResult?.key?.id) {
-          await this.setReaction(msg.chat.id, msg.message_id, "✅")
+          await this.setReaction(msg.chat.id, msg.message_id, "👍")
           logger.debug(`Sent reply to WhatsApp message ${replyMapping.whatsappKey.id}`)
 
           setTimeout(async () => {
